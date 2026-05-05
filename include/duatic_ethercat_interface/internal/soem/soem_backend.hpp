@@ -5,9 +5,9 @@
 
 #include "duatic_ethercat_interface/internal/ethercat_backend.hpp"
 
-#include "duatic_ethercat_interface/internal/some/soem_context.hpp"
+#include "duatic_ethercat_interface/internal/soem/soem_context.hpp"
 
-namespace duatic::ethercat_interface::internal::some
+namespace duatic::ethercat_interface::internal::soem
 {
 class SOEMBackend : public EthercatBackend
 {
@@ -30,4 +30,4 @@ private:
   EthercatContext context_;
   const std::string interface_name_;
 };
-}  // namespace duatic::ethercat_interface::internal::some
+}  // namespace duatic::ethercat_interface::internal::soem

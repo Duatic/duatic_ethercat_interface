@@ -1,10 +1,10 @@
-#include "duatic_ethercat_interface/internal/some/soem_backend.hpp"
+#include "duatic_ethercat_interface/internal/soem/soem_backend.hpp"
 
 #include "duatic_ethercat_interface/exceptions.hpp"
 
 #include <soem_vendor/ethercat.h>
 
-namespace duatic::ethercat_interface::internal::some
+namespace duatic::ethercat_interface::internal::soem
 {
 
 SOEMBackend::SOEMBackend(const std::string& interface) : interface_name_(interface)
@@ -46,4 +46,4 @@ void SOEMBackend::cycle()
 {
 }
 
-}  // namespace duatic::ethercat_interface::internal::some
+}  // namespace duatic::ethercat_interface::internal::soem

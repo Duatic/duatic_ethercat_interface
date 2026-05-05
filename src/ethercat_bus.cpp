@@ -1,5 +1,5 @@
 #include "duatic_ethercat_interface/ethercat_bus.hpp"
-#include "duatic_ethercat_interface/internal/some/soem_backend.hpp"
+#include "duatic_ethercat_interface/internal/soem/soem_backend.hpp"
 
 namespace duatic::ethercat_interface
 {
@@ -20,7 +20,7 @@ EthercatBus::EthercatBus(const std::string& interface, const Backend backend)
 {
   switch (backend) {
     case Backend::SOEM:
-      impl_ = std::make_unique<Impl>(std::make_unique<some::SOEMBackend>(interface));
+      impl_ = std::make_unique<Impl>(std::make_unique<soem::SOEMBackend>(interface));
       break;
   }
 }

@@ -116,13 +116,3 @@ repos:
     hooks:
       - id: doc8
         args: ['--max-line-length=100', '--ignore=D001']
-
-
-  # Spellcheck in comments and docs
-  # skipping of *.svg files is not working...
-  - repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
-    hooks:
-      - id: codespell
-        args: ['--write-changes', '-L bootup,assertIn, SOEM']
-        exclude: \.(svg|pyc|drawio)$
