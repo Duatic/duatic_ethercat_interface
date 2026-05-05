@@ -17,7 +17,9 @@ enum class Backend
 class EthercatBus
 {
 public:
-  explicit EthercatBus(const std::string& device, const Backend backend);
+  explicit EthercatBus(const std::string& interface, const Backend backend);
+
+  void initialize();
 
 protected:
   class Impl;

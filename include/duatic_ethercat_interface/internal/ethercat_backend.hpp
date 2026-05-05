@@ -11,7 +11,7 @@ public:
 
   virtual void add_device(std::shared_ptr<EthercatDeviceBase>) = 0;
 
-  virtual void init() = 0;
+  virtual int initialize() = 0;
   virtual void scan() = 0;
   virtual void configure() = 0;
   virtual void activate() = 0;
