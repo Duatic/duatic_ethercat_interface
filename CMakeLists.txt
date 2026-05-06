@@ -16,7 +16,6 @@ endforeach()
 
 
 add_library(duatic_ethercat_interface
-  src/ethercat_bus.cpp
   src/internal/soem/soem_backend.cpp
 )
 add_library(duatic_ethercat_interface::duatic_ethercat_interface ALIAS duatic_ethercat_interface)
