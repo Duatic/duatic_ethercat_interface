@@ -84,8 +84,6 @@ protected:
                         const SDOSubIndex sub_index = 0, const SDOReadCallback& cb = {});
   bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                          const SDOSubIndex sub_index = 0, const SDOWriteCallback& cb = {});
-
-
 };
 
 }  // namespace duatic::ethercat_interface

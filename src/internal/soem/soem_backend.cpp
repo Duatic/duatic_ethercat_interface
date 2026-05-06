@@ -1,6 +1,7 @@
 #include "duatic_ethercat_interface/ethercat_bus.hpp"
 
 #include "duatic_ethercat_interface/exceptions.hpp"
+#include "duatic_ethercat_interface/precision_update_rate.hpp"
 
 #include "duatic_ethercat_interface/internal/soem/soem_context.hpp"
 #include <iostream>
@@ -14,6 +15,7 @@ enum class BusState
 {
   PreInit,
   Initialized,
+  Configured,
   Operational,
   Shutdown
 };
@@ -128,7 +130,11 @@ struct EthercatBus::Impl
 
   void add_device(std::unique_ptr<EthercatDeviceBase> device)
   {
-    
+    // As we need to perfrom the right PDO mapping we need to make sure that the bus is in the right state
+    if (get_bus_state() != BusState::Initialized || get_bus_state() != BusState::Configured) {
+      throw BackendError("Cannot attach device to bus - bus it not in the correct state", Backend::SOEM);
+    }
+    // And that we not already handle a device with this id
     if (has_device(device->get_device_id())) {
       throw BackendError("Device with id: " + std::to_string(device->get_device_id()) +
                              " is already handled by this bus",
@@ -136,26 +142,80 @@ struct EthercatBus::Impl
     }
     devices_.emplace_back(std::move(device));
   }
+
+  DeviceContext& create_device_context(EthercatBus* bus, const DeviceId device_id)
+  {
+    // Check if the device even is on the bus
+    if (has_device_on_bus(device_id)) {
+      throw BackendError("Device id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
+    }
+    // If yes we can create new device context
+    device_contexts_.emplace_back(DeviceContext{ bus, device_id });
+    return device_contexts_.back();
+  }
+
+  void startup()
+  {
+    if (get_bus_state() != BusState::Initialized) {
+      throw BackendError("Cannot perform startup - bus needs to be in 'Initialized' state", Backend::SOEM);
+    }
+    // Give the device the chance to prepare its pdo mapping
+    for (auto& device : devices_) {
+      device->on_startup();
+    }
+
+    // Perform PDO setup
+    // First determine the necessary io map size
+    const int iomap_size = ecx_config_map_group(&context_.context, NULL, 0);
+    io_map_.resize(iomap_size, 0);
+
+    ecx_config_map_group(&context_.context, io_map_.data(), 0);
+
+    update_bus_state(BusState::Configured);
+  }
+
+  void activate()
+  {
+    if (get_bus_state() != BusState::Configured) {
+      throw BackendError("Cannot perform activate - bus needs to be in 'Configured' state", Backend::SOEM);
+    }
+
+    // Give the device the chance to perform any last steps before we
+    for (auto& device : devices_) {
+      device->on_pre_activate();
+    }
+
+    // Now put all devices into safeop first (this is timewise non critical)
+
+    // First we request it from every slave
+    for (auto& device : devices_) {
+      if (!set_device_target_state(device->get_device_id(), ec_state::EC_STATE_SAFE_OP)) {
+        // Shutdown should handle a safe exit in all situations and bus states
+        shutdown();
+        throw BackendError("Could set target state for device - aborting activation", Backend::SOEM);
+      }
+    }
+    // Now we wait for all slaves to reach it
+    for (auto& device : devices_) {
+      if (wait_for_device_target_state(device->get_device_id(), ec_state::EC_STATE_SAFE_OP)) {
+        shutdown();
+        throw BackendError("Device did not reach 'SAFE_OP' state - aborting activation", Backend::SOEM);
+      }
+    }
+  }
+
+  void shutdown()
+  {
+  }
+
   bool has_device(const DeviceId device_id) const
   {
     return std::find_if(devices_.begin(), devices_.end(),
                         [&](const auto& d) { return d->get_device_id() == device_id; }) == devices_.end();
   }
-  DeviceContext& create_device_context(EthercatBus* bus, const DeviceId device_id)
-  { 
-    // Check if the device even is on the bus
-    if(has_device_on_bus(device_id)){
-      throw BackendError("Device id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
-    }
-    // If yes we can create new device context
-     device_contexts_.emplace_back(DeviceContext{ bus, device_id });
-     return device_contexts_.back();
-  }
 
-  void startup() {
-    for(auto & device: devices_){
-      device->on_startup();
-    }
+  void update()
+  {
   }
 
 private:
@@ -166,6 +226,7 @@ private:
 
   std::vector<std::unique_ptr<EthercatDeviceBase>> devices_;
   std::vector<DeviceContext> device_contexts_;
+  std::vector<uint8_t> io_map_;
 
   void update_bus_state(BusState state)
   {
@@ -176,11 +237,26 @@ private:
     return state_;
   }
 
+  bool set_device_target_state(const DeviceId device_id, ec_state target_state)
+  {
+    context_.ecatSlavelist_[device_id].state = target_state;
+    return ecx_writestate(&context_.context, device_id) > 0;
+  }
+  bool wait_for_device_target_state(const DeviceId device_id, ec_state target_state, int timeout = EC_TIMEOUTSTATE)
+  {
+    return ecx_statecheck(&context_.context, device_id, target_state, timeout) == target_state;
+  }
+  ec_state get_device_state(const DeviceId device_id)
+  {
+    return static_cast<ec_state>(context_.ecatSlavelist_[device_id].state);
+  }
+
   /**
    * @brief check if the specific device has been found on the bus
    * @note this is different to "has_device" which checks if we handle a specific device
    */
-  bool has_device_on_bus(const DeviceId id) const {
+  bool has_device_on_bus(const DeviceId id) const
+  {
     return id < get_device_count();
   }
 };
@@ -208,6 +284,6 @@ bool EthercatBus::has_device(const DeviceId device_id) const
 }
 DeviceContext& EthercatBus::create_device_context(EthercatBus* bus, const DeviceId device_id)
 {
-  return impl_->create_device_context(bus,device_id);
+  return impl_->create_device_context(bus, device_id);
 }
 }  // namespace duatic::ethercat_interface
