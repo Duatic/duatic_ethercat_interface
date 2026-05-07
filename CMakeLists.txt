@@ -8,6 +8,7 @@ find_package(ament_cmake_ros REQUIRED)
 set(PACKAGE_DEPENDENCIES
   soem_vendor
   etherlab_master_vendor
+  duatic_message_logger
 )
 
 foreach(Dependency IN ITEMS ${PACKAGE_DEPENDENCIES})
@@ -17,6 +18,7 @@ endforeach()
 
 add_library(duatic_ethercat_interface
   src/internal/soem/soem_backend.cpp
+  src/device_context.cpp
 )
 add_library(duatic_ethercat_interface::duatic_ethercat_interface ALIAS duatic_ethercat_interface)
 target_compile_features(duatic_ethercat_interface PUBLIC c_std_99 cxx_std_20)  # Require C99 and C++20
@@ -25,7 +27,7 @@ target_include_directories(duatic_ethercat_interface PUBLIC
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
 
 ament_target_dependencies(duatic_ethercat_interface ${PACKAGE_DEPENDENCIES})
-target_link_libraries(duatic_ethercat_interface ${YAML_CPP_LIBRARIES})
+target_link_libraries(duatic_ethercat_interface duatic_message_logger::duatic_message_logger)
 # enable additional warnings
 target_compile_options(duatic_ethercat_interface PRIVATE
   -Wall
@@ -72,6 +74,6 @@ ament_export_targets(
   export_${PROJECT_NAME}
 )
 
-ament_export_dependencies(${PACKAGE_DEPENDENCIES} yaml-cpp)
+ament_export_dependencies(${PACKAGE_DEPENDENCIES})
 
 ament_package()

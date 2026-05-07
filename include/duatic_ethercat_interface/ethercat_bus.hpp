@@ -68,6 +68,7 @@ public:
   bool has_device(const DeviceId device_id) const;
 
 protected:
+  // Pimpl pattern which hides the actual backend implementation
   class Impl;
   std::unique_ptr<Impl> impl_;
 
@@ -75,15 +76,17 @@ protected:
   DeviceContext& create_device_context(EthercatBus* bus, const DeviceId device_id);
   // Untyped functions for reading writing SDOs
   // Blocking
-  bool read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                        const SDOSubIndex sub_index = 0);
+  SDOReadResult read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
+                                 const SDOSubIndex sub_index);
   bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                         const SDOSubIndex sub_index = 0);
+                         const SDOSubIndex sub_index);
   // Non-blocking
   bool read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                        const SDOSubIndex sub_index = 0, const SDOReadCallback& cb = {});
+                        const SDOSubIndex sub_index, const SDOReadCallback& cb);
   bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                         const SDOSubIndex sub_index = 0, const SDOWriteCallback& cb = {});
+                         const SDOSubIndex sub_index, const SDOWriteCallback& cb);
+
+  friend class DeviceContext;
 };
 
 }  // namespace duatic::ethercat_interface

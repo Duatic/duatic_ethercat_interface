@@ -4,7 +4,7 @@
 #include "duatic_ethercat_interface/precision_update_rate.hpp"
 
 #include "duatic_ethercat_interface/internal/soem/soem_context.hpp"
-#include <iostream>
+#include "duatic_message_logger/log.hpp"
 // Implementation of the EthercatBus for the SOEM library
 namespace duatic::ethercat_interface
 {
@@ -48,8 +48,8 @@ struct EthercatBus::Impl
     return params_;
   }
 
-  bool read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                        const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
+  SDOReadResult read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
+                                 const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
   {
     // NOTE we only report some errors as exceptions as for example working counter too low can happen also in normal
     // operation In this case simply false is returned
@@ -65,32 +65,32 @@ struct EthercatBus::Impl
     // Depending on the current bus state we need to handle SDO access differently
     // When the bus is up and running we should enqueue and SDO access into the main update thread
     // otherwise we can simply directly perform the operation
+    const int requested_size = data.size();
+    int actual_size = requested_size;
+    int wkc = 0;
     if (get_bus_state() == BusState::Operational) {
       // TODO queue sdo call into update thread
     } else {
       // Directly perform the read
-      const int requested_size = data.size();
-      int actual_size = requested_size;
 
-      const int wkc =
-          ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
+      wkc = ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
       if (wkc <= 0) {
-        std::cerr << "Device id " << device_id << ": Working counter too low (" << wkc << ") for reading SDO (ID: 0x"
-                  << std::setfill('0') << std::setw(4) << std::hex << index << ", SID 0x" << std::setfill('0')
-                  << std::setw(2) << std::hex << static_cast<uint16_t>(sub_index) << ")." << std::endl;
-        return false;
+        logging::error() << "Device id " << device_id << ": Working counter too low (" << wkc
+                         << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
+                         << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
+                         << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+        return SDOReadResult{ .success = false, .actual_size_read = actual_size, .working_counter = wkc };
       }
 
       if (requested_size != actual_size) {
-        std::cerr << "Device id  " << device_id << ": Size mismatch (expected " << requested_size << " bytes, read "
-                  << actual_size << " bytes) for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex
-                  << index << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                  << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+        logging::error() << "Device id  " << device_id << ": Size mismatch (expected " << requested_size
+                         << " bytes, read " << actual_size << " bytes) for reading SDO (ID: 0x" << std::setfill('0')
+                         << std::setw(4) << std::hex << index << ", SID 0x" << std::setfill('0') << std::setw(2)
+                         << std::hex << static_cast<uint16_t>(sub_index) << ")." << std::endl;
         throw BackendError("SDORead size mismatch", Backend::SOEM, actual_size);
       }
     }
-
-    return true;
+    return SDOReadResult{ .success = true, .actual_size_read = actual_size, .working_counter = wkc };
   }
   bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                          const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
@@ -113,9 +113,10 @@ struct EthercatBus::Impl
       const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, data.size(),
                                    const_cast<uint8_t*>(data.data()), timeout);
       if (wkc <= 0) {
-        std::cerr << "Device id " << device_id << ": Working counter too low (" << wkc << ") for writing SDO (ID: 0x"
-                  << std::setfill('0') << std::setw(4) << std::hex << index << ", SID 0x" << std::setfill('0')
-                  << std::setw(2) << std::hex << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+        logging::error() << "Device id " << device_id << ": Working counter too low (" << wkc
+                         << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
+                         << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
+                         << static_cast<uint16_t>(sub_index) << ")." << std::endl;
 
         return false;
       }
@@ -285,5 +286,15 @@ bool EthercatBus::has_device(const DeviceId device_id) const
 DeviceContext& EthercatBus::create_device_context(EthercatBus* bus, const DeviceId device_id)
 {
   return impl_->create_device_context(bus, device_id);
+}
+SDOReadResult EthercatBus::read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
+                                            const SDOSubIndex sub_index)
+{
+  return impl_->read_sdo_untyped(data, device_id, index, sub_index);
+}
+bool EthercatBus::write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
+                                    const SDOSubIndex sub_index)
+{
+  return impl_->write_sdo_untyped(data, device_id, index, sub_index);
 }
 }  // namespace duatic::ethercat_interface
