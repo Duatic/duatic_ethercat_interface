@@ -30,6 +30,8 @@ public:
   template <typename T>
   bool sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index = 0);
 
+  bool sdo_write(const std::string value, const SDOIndex index, const SDOSubIndex sub_index = 0);
+
 private:
   EthercatBus* bus_{ nullptr };
   DeviceId device_id_{ 0 };

@@ -49,4 +49,42 @@ template std::optional<int64_t> DeviceContext::sdo_read<int64_t>(SDOIndex, SDOSu
 template std::optional<float> DeviceContext::sdo_read<float>(SDOIndex, SDOSubIndex);
 template std::optional<double> DeviceContext::sdo_read<double>(SDOIndex, SDOSubIndex);
 
+template <typename T>
+bool DeviceContext::sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index)
+{
+  // Call by value makes this function safer in case the call needs to be queued
+  std::span<const uint8_t> data(reinterpret_cast<const uint8_t*>(&value), sizeof(T));
+  const auto result = bus_->write_sdo_untyped(data, get_device_id(), index, sub_index);
+  if (!result) {
+    // Something during the write failed
+    return false;
+  }
+
+  return true;
+}
+
+bool DeviceContext::sdo_write(const std::string value, const SDOIndex index, const SDOSubIndex sub_index)
+{
+  // Call by value makes this function safer in case the call needs to be queued
+  std::span<const uint8_t> data(reinterpret_cast<const uint8_t*>(value.data()), value.size());
+  const auto result = bus_->write_sdo_untyped(data, get_device_id(), index, sub_index);
+  if (!result) {
+    // Something during the write failed
+    return false;
+  }
+
+  return true;
+}
+
+template bool DeviceContext::sdo_write<uint8_t>(const uint8_t, SDOIndex, SDOSubIndex);
+template bool DeviceContext::sdo_write<int8_t>(const int8_t, SDOIndex, SDOSubIndex);
+template bool DeviceContext::sdo_write<uint16_t>(const uint16_t, SDOIndex, SDOSubIndex);
+template bool DeviceContext::sdo_write<int16_t>(const int16_t, SDOIndex, SDOSubIndex);
+template bool DeviceContext::sdo_write<uint32_t>(const uint32_t, SDOIndex, SDOSubIndex);
+template bool DeviceContext::sdo_write<int32_t>(const int32_t, SDOIndex, SDOSubIndex);
+template bool DeviceContext::sdo_write<uint64_t>(const uint64_t, SDOIndex, SDOSubIndex);
+template bool DeviceContext::sdo_write<int64_t>(const int64_t, SDOIndex, SDOSubIndex);
+template bool DeviceContext::sdo_write<float>(const float, SDOIndex, SDOSubIndex);
+template bool DeviceContext::sdo_write<double>(const double, SDOIndex, SDOSubIndex);
+
 }  // namespace duatic::ethercat_interface
