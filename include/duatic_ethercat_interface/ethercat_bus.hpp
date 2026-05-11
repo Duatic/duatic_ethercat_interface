@@ -69,8 +69,8 @@ public:
 
 protected:
   // Pimpl pattern which hides the actual backend implementation
-  class Impl;
-  std::unique_ptr<Impl> impl_;
+  class BackendImpl;
+  std::unique_ptr<BackendImpl> impl_;
 
   void add_device(std::unique_ptr<EthercatDeviceBase> device);
   DeviceContext& create_device_context(EthercatBus* bus, const DeviceId device_id);
