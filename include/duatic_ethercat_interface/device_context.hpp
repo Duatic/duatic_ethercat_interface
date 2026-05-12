@@ -4,6 +4,7 @@
 #include <string>
 
 #include "duatic_ethercat_interface/types.hpp"
+#include "duatic_ethercat_interface/object_dictionary.hpp"
 
 namespace duatic::ethercat_interface
 {
@@ -12,7 +13,8 @@ class EthercatBus;
 class DeviceContext
 {
 public:
-  DeviceContext(EthercatBus* bus, DeviceId device_id) : bus_(bus), device_id_(device_id)
+  DeviceContext(EthercatBus* bus, DeviceId device_id)
+    : bus_(bus), device_id_(device_id)
   {
   }
 
@@ -32,8 +34,11 @@ public:
 
   bool sdo_write(const std::string value, const SDOIndex index, const SDOSubIndex sub_index = 0);
 
+  const ObjectDictionary& read_od(bool full_read = false) const;
+
 private:
   EthercatBus* bus_{ nullptr };
   DeviceId device_id_{ 0 };
+
 };
 }  // namespace duatic::ethercat_interface

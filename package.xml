@@ -16,6 +16,9 @@
   <depend>etherlab_master_vendor</depend>
   <depend>duatic_message_logger</depend>
 
+  <!--Tooling dependencies-->
+  <depend>libcxxopts-dev</depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

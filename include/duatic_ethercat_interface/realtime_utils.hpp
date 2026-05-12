@@ -44,7 +44,7 @@ bool set_realtime_priority(pthread_t thread, int priority = 60, int cpu_core = -
   // Now try to attach the thread to a specific cpu core
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
-  const int number_of_cpus = sysconf(_SC_NPROCESSORS_ONLN);
+  const auto number_of_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 
   // User did not want to attach thread to a cpu core
   if (cpu_core < 0) {

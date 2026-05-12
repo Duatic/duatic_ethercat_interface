@@ -87,4 +87,8 @@ template bool DeviceContext::sdo_write<int64_t>(const int64_t, SDOIndex, SDOSubI
 template bool DeviceContext::sdo_write<float>(const float, SDOIndex, SDOSubIndex);
 template bool DeviceContext::sdo_write<double>(const double, SDOIndex, SDOSubIndex);
 
+const ObjectDictionary& DeviceContext::read_od(bool full_read) const
+{
+  return bus_->read_od(get_device_id(), full_read);
+}
 }  // namespace duatic::ethercat_interface

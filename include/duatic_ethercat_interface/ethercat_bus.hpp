@@ -28,9 +28,13 @@ public:
     std::string interface;
     std::chrono::nanoseconds update_rate{ 1000000 };
     UpdateMode update_mode{ UpdateMode::SelfManaged };
+
+    int realtime_priority {60};
+    int desired_cpu_core {-1};
   };
 
   explicit EthercatBus(const Parameters& params);
+  virtual ~EthercatBus();
 
   /**
    * @brief initialize the bus
@@ -38,6 +42,8 @@ public:
    * @return Amount of slaves found on the bus
    */
   int initialize();
+
+  std::vector<DeviceInfo> scan();
 
   void startup();
   void activate();
@@ -67,6 +73,9 @@ public:
 
   bool has_device(const DeviceId device_id) const;
 
+
+  static std::vector<std::string> list_interfaces();
+
 protected:
   // Pimpl pattern which hides the actual backend implementation
   class BackendImpl;
@@ -85,7 +94,8 @@ protected:
                         const SDOSubIndex sub_index, const SDOReadCallback& cb);
   bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                          const SDOSubIndex sub_index, const SDOWriteCallback& cb);
-
+  
+  ObjectDictionary read_od(const DeviceId device_id, bool full_read = false);
   friend class DeviceContext;
 };
 

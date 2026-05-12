@@ -6,6 +6,7 @@
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/precision_update_rate.hpp"
 #include "duatic_ethercat_interface/realtime_utils.hpp"
+#include "duatic_ethercat_interface/object_dictionary.hpp"
 
 #include "duatic_ethercat_interface/internal/backend_impl.hpp"
 #include "duatic_ethercat_interface/internal/soem/soem_context.hpp"
@@ -26,7 +27,7 @@ enum class BusState
   Shutdown
 };
 
-struct EthercatBus::BackendImpl : public internal::BackendImplInterface
+struct EthercatBus::BackendImpl
 {
   explicit BackendImpl(const Parameters& params) : params_(params), update_rate_(params_.update_rate)
   {
@@ -216,6 +217,8 @@ struct EthercatBus::BackendImpl : public internal::BackendImplInterface
     // If configured we now start the ethercat update thread
     if (params_.update_mode == UpdateMode::Synchronous) {
       update_thread_ = std::jthread([this](std::stop_token st) {
+        // Configure rt-prio for this task
+        set_realtime_priority(params_.realtime_priority, params_.desired_cpu_core);
         while (!st.stop_requested()) {
           this->update();
         }
@@ -283,6 +286,86 @@ struct EthercatBus::BackendImpl : public internal::BackendImplInterface
         logging::warning() << "Update took too long: " << update_rate_.accumulated_delay_ns() << std::endl;
       }
     }
+  }
+
+  std::vector<SDOEntry> read_od_from_device(const DeviceId device_id, bool full_read)
+  {
+    std::vector<SDOEntry> result;
+
+    ec_ODlistt od_list{};
+
+    // 1. Read Object Dictionary list (top level objects)
+    if (!ecx_readODlist(&context_.context, device_id, &od_list)) {
+      throw BackendError("Failed to read OD list from device", Backend::SOEM);
+    }
+
+    // 2. Iterate over objects
+    for (int i = 0; i < od_list.Entries; ++i) {
+      SDOEntry entry{};
+
+      entry.index = static_cast<SDOIndex>(od_list.Index[i]);
+      entry.obj_type = static_cast<SDOObjectCode>(od_list.ObjectCode[i]);
+      entry.data_type = static_cast<DataType>(od_list.DataType[i]);
+      entry.count_sub_indices = static_cast<std::size_t>(od_list.MaxSub[i]);
+      entry.name = od_list.Name[i] ? od_list.Name[i] : "";
+
+      // Always push entry even if we don't expand subindices
+      result.push_back(entry);
+    }
+
+    // 3. Optional: full subindex scan
+    if (full_read) {
+      for (auto& obj : result) {
+        // Clear previous subentries just in case
+        obj.sub_entries.clear();
+        ec_OElistt oe_list{};
+
+        // Read subindex metadata for this object
+        // Pass the item number (should match the index in od_list)
+        int item_index = -1;
+        for (int idx = 0; idx < od_list.Entries; ++idx) {
+          if (od_list.Index[idx] == static_cast<uint16_t>(obj.index)) {
+            item_index = idx;
+            break;
+          }
+        }
+
+        if (item_index < 0 || !ecx_readOE(&context_.context, item_index, &od_list, &oe_list)) {
+          continue;  // some objects may not support OE info
+        }
+
+        // IMPORTANT: OElist.Entries = number of subentries returned
+        for (int s = 0; s < oe_list.Entries; ++s) {
+          SDOSubEntry sub{};
+          sub.index = static_cast<SDOSubIndex>(s);
+          sub.name = oe_list.Name[s] ? oe_list.Name[s] : "";
+          sub.data_type = static_cast<DataType>(oe_list.DataType[s]);
+          sub.size = static_cast<std::size_t>(oe_list.BitLength[s] / 8);
+
+          obj.sub_entries.push_back(sub);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  std::vector<DeviceInfo> scan()
+  {
+    std::vector<DeviceInfo> result;
+    if (get_bus_state() == BusState::PreInit) {
+      throw BackendError("Need to initialize bus first for a scan", Backend::SOEM);
+    }
+
+    for (int i = 1; i <= context_.ecatSlavecount_; i++) {
+      result.emplace_back(DeviceInfo{ .id = static_cast<DeviceId>(i),
+                                      .name = std::string(context_.ecatSlavelist_[i].name),
+                                      .vendor_id = context_.ecatSlavelist_[i].eep_man,
+                                      .product_id = context_.ecatSlavelist_[i].eep_id,
+                                      .revision = context_.ecatSlavelist_[i].eep_rev,
+                                      .has_dc = static_cast<bool>(context_.ecatSlavelist_[i].hasdc) });
+    }
+    return result;
   }
 
 private:
@@ -382,11 +465,13 @@ private:
   }
 };
 
+
 // Pimpl - redirections
 EthercatBus::EthercatBus(const Parameters& params)
 {
   impl_ = std::make_unique<EthercatBus::BackendImpl>(params);
 }
+EthercatBus::~EthercatBus() {}
 int EthercatBus::initialize()
 {
   return impl_->initialize();
@@ -416,6 +501,36 @@ bool EthercatBus::write_sdo_untyped(std::span<const uint8_t> data, const DeviceI
                                     const SDOSubIndex sub_index)
 {
   return impl_->write_sdo_untyped(data, device_id, index, sub_index);
+}
+
+ObjectDictionary EthercatBus::read_od(const DeviceId device_id, bool full_read)
+{
+  return ObjectDictionary{ impl_->read_od_from_device(device_id, full_read) };
+}
+
+std::vector<DeviceInfo> EthercatBus::scan()
+{
+  return impl_->scan();
+}
+
+std::vector<std::string> EthercatBus::list_interfaces()
+{
+  ec_adaptert* adapter = nullptr;
+
+  adapter = ec_find_adapters();
+  if (!adapter)
+    throw std::runtime_error("Error calling ec_find_adapters");
+
+  std::vector<std::string> result;
+
+  auto iter = adapter;
+  while (iter != nullptr) {
+    result.push_back(iter->name);
+    iter = iter->next;
+  }
+
+  ec_free_adapters(adapter);
+  return result;
 }
 
 }  // namespace duatic::ethercat_interface
