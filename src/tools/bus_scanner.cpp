@@ -46,15 +46,18 @@ void handle_sdo(const std::string& interface)
 
     std::cout << info << std::endl;
     for (const auto& [index, sdo] : od.entries()) {
-      std::cout << "   index: " << std::hex << "0x" << sdo.index << std::endl;
+      std::cout << "  [" << std::hex << "0x" << sdo.index << std::dec << "]" << std::endl;
       std::cout << "   name: " << sdo.name << std::endl;
-      std::cout << "   data type: " << sdo.data_type << std::endl;
+
       std::cout << "   object type: " << sdo.obj_type << std::endl;
+      if(sdo.sub_entries.empty()){
+            std::cout << "   data type: " << sdo.data_type << std::endl;
+      }
 
       for (const auto& sub : sdo.sub_entries) {
-        std::cout << "     sub index: " << sub.index << std::endl;
+        std::cout << "     sub index: " << static_cast<int>(sub.index) << std::endl;
         std::cout << "     name: " << sub.name << std::endl;
-        std::cout << "     data_type" << sub.data_type << std::endl;
+        std::cout << "     data_type: " << sub.data_type << std::endl;
       }
     }
   }
@@ -85,7 +88,7 @@ int main(int argc, char** argv)
 
   const auto verb = args["verb"].as<std::string>();
   // Check if the right verb was passed
-  if (verb != "scan" && verb != "list_interfaces") {
+  if (verb != "scan" && verb != "list_interfaces" && verb != "sdo") {
     std::cout << "Please pass a valid action" << std::endl;
     std::cout << options.help() << std::endl;
     return -1;

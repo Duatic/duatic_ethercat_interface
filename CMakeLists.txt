@@ -7,7 +7,7 @@ find_package(ament_cmake_ros REQUIRED)
 
 set(PACKAGE_DEPENDENCIES
   soem_vendor
-  etherlab_master_vendor
+  #etherlab_master_vendor
   duatic_message_logger
 )
 
