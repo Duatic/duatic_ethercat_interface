@@ -20,20 +20,44 @@ void handle_list_interfaces()
 }
 void handle_scan(const std::string& interface)
 {
-    EthercatBus bus(EthercatBus::Parameters{
-        .interface = interface
-    });
-    std::cout << "scanning bus: " << interface << " for devices" << std::endl;
+  EthercatBus bus(EthercatBus::Parameters{ .interface = interface });
+  std::cout << "scanning bus: " << interface << " for devices" << std::endl;
 
+  const auto device_count = bus.initialize();
+  std::cout << "found: " << device_count << " devices on the bus" << std::endl;
 
-    const auto device_count = bus.initialize();
-    std::cout << "found: " << device_count << " devices on the bus" << std::endl;
+  const auto devices = bus.scan();
 
-    const auto devices = bus.scan();
+  for (const auto& info : devices) {
+    std::cout << info << std::endl;
+  }
+}
+void handle_sdo(const std::string& interface)
+{
+  EthercatBus bus(EthercatBus::Parameters{ .interface = interface });
 
-    for(const auto & info: devices){
-        std::cout << info << std::endl;
+  const auto device_count = bus.initialize();
+  std::cout << "found: " << device_count << " devices on the bus" << std::endl;
+
+  const auto devices = bus.scan();
+
+  for (const auto& info : devices) {
+    const auto od = bus.read_od(info.id, true);
+
+    std::cout << info << std::endl;
+    for (const auto& [index, sdo] : od.entries()) {
+      std::cout << "   index: " << std::hex << "0x" << sdo.index << std::endl;
+      std::cout << "   name: " << sdo.name << std::endl;
+      std::cout << "   data type: " << sdo.data_type << std::endl;
+      std::cout << "   object type: " << sdo.obj_type << std::endl;
+
+      for (const auto& sub : sdo.sub_entries) {
+        std::cout << "     sub index: " << sub.index << std::endl;
+        std::cout << "     name: " << sub.name << std::endl;
+        std::cout << "     data_type" << sub.data_type << std::endl;
+      }
     }
+  }
 }
 
 int main(int argc, char** argv)
@@ -42,7 +66,7 @@ int main(int argc, char** argv)
 
   // clang-format off
     options.add_options()
-        ("verb", "Actions to perform [scan, list_interfaces]", cxxopts::value<std::string>())
+        ("verb", "Actions to perform [scan, list_interfaces, sdo]", cxxopts::value<std::string>())
         ("b,bus", "Ethercat Bus", cxxopts::value<std::string>()->default_value("eth0"))
         ("h,help", "Print usage");
   // clang-format on
@@ -76,6 +100,11 @@ int main(int argc, char** argv)
 
     if (verb == "scan") {
       handle_scan(bus);
+      return 0;
+    }
+
+    if (verb == "sdo") {
+      handle_sdo(bus);
       return 0;
     }
   } catch (const std::exception& ex) {

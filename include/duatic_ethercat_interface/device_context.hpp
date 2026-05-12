@@ -13,8 +13,7 @@ class EthercatBus;
 class DeviceContext
 {
 public:
-  DeviceContext(EthercatBus* bus, DeviceId device_id)
-    : bus_(bus), device_id_(device_id)
+  DeviceContext(EthercatBus* bus, DeviceId device_id) : bus_(bus), device_id_(device_id)
   {
   }
 
@@ -39,6 +38,5 @@ public:
 private:
   EthercatBus* bus_{ nullptr };
   DeviceId device_id_{ 0 };
-
 };
 }  // namespace duatic::ethercat_interface

@@ -29,8 +29,8 @@ public:
     std::chrono::nanoseconds update_rate{ 1000000 };
     UpdateMode update_mode{ UpdateMode::SelfManaged };
 
-    int realtime_priority {60};
-    int desired_cpu_core {-1};
+    int realtime_priority{ 60 };
+    int desired_cpu_core{ -1 };
   };
 
   explicit EthercatBus(const Parameters& params);
@@ -44,6 +44,7 @@ public:
   int initialize();
 
   std::vector<DeviceInfo> scan();
+  ObjectDictionary read_od(const DeviceId device_id, bool full_read = false);
 
   void startup();
   void activate();
@@ -73,7 +74,6 @@ public:
 
   bool has_device(const DeviceId device_id) const;
 
-
   static std::vector<std::string> list_interfaces();
 
 protected:
@@ -94,8 +94,7 @@ protected:
                         const SDOSubIndex sub_index, const SDOReadCallback& cb);
   bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                          const SDOSubIndex sub_index, const SDOWriteCallback& cb);
-  
-  ObjectDictionary read_od(const DeviceId device_id, bool full_read = false);
+
   friend class DeviceContext;
 };
 

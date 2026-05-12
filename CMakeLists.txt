@@ -51,7 +51,7 @@ target_compile_definitions(duatic_ethercat_interface PRIVATE "duatic_ethercat_in
 # Tooling
 find_package(cxxopts REQUIRED)
 add_executable(bus_scanner ./src/tools/bus_scanner.cpp)
-target_compile_features(bus_scanner PUBLIC c_std_99 cxx_std_20) 
+target_compile_features(bus_scanner PUBLIC c_std_99 cxx_std_20)
 target_include_directories(bus_scanner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(bus_scanner duatic_ethercat_interface cxxopts::cxxopts)
 
@@ -66,7 +66,7 @@ install(
 )
 
 install(
-  TARGETS duatic_ethercat_interface 
+  TARGETS duatic_ethercat_interface
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib

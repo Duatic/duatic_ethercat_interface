@@ -465,13 +465,14 @@ private:
   }
 };
 
-
 // Pimpl - redirections
 EthercatBus::EthercatBus(const Parameters& params)
 {
   impl_ = std::make_unique<EthercatBus::BackendImpl>(params);
 }
-EthercatBus::~EthercatBus() {}
+EthercatBus::~EthercatBus()
+{
+}
 int EthercatBus::initialize()
 {
   return impl_->initialize();
