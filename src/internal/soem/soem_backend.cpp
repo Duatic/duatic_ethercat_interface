@@ -49,10 +49,12 @@ inline std::ostream& operator<<(std::ostream& os, BusState state)
 
 struct EthercatBus::BackendImpl
 {
-  explicit BackendImpl(const Parameters& params) : params_(params), update_rate_(params_.update_rate), logger_(  logging::get_logger_with_default_sink("SOEM-Backend"))
+  explicit BackendImpl(const Parameters& params)
+    : params_(params), update_rate_(params_.update_rate), logger_(logging::get_logger_with_default_sink("SOEM-Backend"))
   {
   }
-  ~BackendImpl() {
+  ~BackendImpl()
+  {
     shutdown();
   }
 
@@ -258,13 +260,12 @@ struct EthercatBus::BackendImpl
 
   void shutdown()
   {
-
     // The bus has not been initialized - no need to shut it down
     if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown) {
       update_bus_state(BusState::Shutdown);
       return;
     }
-        logging::info(logger_) << "Performing bus shutdown: " << params_.interface;
+    logging::info(logger_) << "Performing bus shutdown: " << params_.interface;
     // We only initialized the bus - just close the connection
     if (get_bus_state() == BusState::Initialized) {
       update_bus_state(BusState::Shutdown);
@@ -357,7 +358,7 @@ struct EthercatBus::BackendImpl
     if (full_read) {
       for (auto& obj : result) {
         // Var types do now have sub objects
-        if(obj.obj_type == SDOObjectCode::Var){
+        if (obj.obj_type == SDOObjectCode::Var) {
           continue;
         }
         // Clear previous subentries just in case

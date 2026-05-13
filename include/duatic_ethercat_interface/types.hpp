@@ -40,7 +40,7 @@ struct SDOWriteResult
   }
 };
 
-enum class SDOObjectCode: uint8_t
+enum class SDOObjectCode : uint8_t
 {
   Var = 0x07,
   Array = 0x08,
