@@ -201,8 +201,11 @@ struct EthercatBus::BackendImpl
     // Perform PDO setup
     // First determine the necessary io map size
     const int iomap_size = ecx_config_map_group(&context_.context, NULL, 0);
-    io_map_.resize(iomap_size, 0);
-
+    if (iomap_size < 0) {
+      throw BackendError("IOMap size < 0 (" + std::to_string(iomap_size) + ")", Backend::SOEM);
+    }
+    io_map_.resize(static_cast<std::size_t>(iomap_size), 0);
+    // And then do the actual configuration
     const int final_iomap_size = ecx_config_map_group(&context_.context, io_map_.data(), 0);
     logging::info(logger_) << "IOMap size: " << final_iomap_size << std::endl;
     ecx_configdc(&context_.context);
@@ -343,12 +346,12 @@ struct EthercatBus::BackendImpl
     // 2. Iterate over objects
     for (int i = 0; i < od_list.Entries; ++i) {
       SDOEntry entry{};
-      ecx_readODdescription(&context_.context, i, &od_list);
+      ecx_readODdescription(&context_.context, static_cast<uint16_t>(i), &od_list);
       entry.index = static_cast<SDOIndex>(od_list.Index[i]);
       entry.obj_type = static_cast<SDOObjectCode>(od_list.ObjectCode[i]);
       entry.data_type = static_cast<DataType>(od_list.DataType[i]);
       entry.count_sub_indices = static_cast<std::size_t>(od_list.MaxSub[i]);
-      entry.name = od_list.Name[i] ? od_list.Name[i] : "";
+      entry.name = od_list.Name[i];
 
       // Always push entry even if we don't expand subindices
       result.push_back(entry);
@@ -375,7 +378,7 @@ struct EthercatBus::BackendImpl
           }
         }
 
-        if (item_index < 0 || !ecx_readOE(&context_.context, item_index, &od_list, &oe_list)) {
+        if (item_index < 0 || !ecx_readOE(&context_.context, static_cast<uint16_t>(item_index), &od_list, &oe_list)) {
           continue;  // some objects may not support OE info
         }
 
@@ -383,7 +386,7 @@ struct EthercatBus::BackendImpl
         for (int s = 0; s < oe_list.Entries; ++s) {
           SDOSubEntry sub{};
           sub.index = static_cast<SDOSubIndex>(s);
-          sub.name = oe_list.Name[s] ? oe_list.Name[s] : "";
+          sub.name = oe_list.Name[s];
           sub.data_type = static_cast<DataType>(oe_list.DataType[s]);
           sub.size = static_cast<std::size_t>(oe_list.BitLength[s] / 8);
 
