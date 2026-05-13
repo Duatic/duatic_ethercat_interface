@@ -55,9 +55,9 @@ void handle_sdo(const std::string& interface)
       }
 
       for (const auto& sub : sdo.sub_entries) {
-        std::cout << "     sub index: " << static_cast<int>(sub.index) << std::endl;
-        std::cout << "     name: " << sub.name << std::endl;
-        std::cout << "     data_type: " << sub.data_type << std::endl;
+        std::cout << "     [0x" << std::hex<< static_cast<int>(sub.index) << std::dec << "]"<< std::endl;
+        std::cout << "      name: " << sub.name << std::endl;
+        std::cout << "      data_type: " << sub.data_type << std::endl;
       }
     }
   }

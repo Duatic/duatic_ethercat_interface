@@ -40,11 +40,11 @@ struct SDOWriteResult
   }
 };
 
-enum class SDOObjectCode
+enum class SDOObjectCode: uint8_t
 {
-  Var,
-  Array,
-  Record
+  Var = 0x07,
+  Array = 0x08,
+  Record = 0x09
 };
 
 enum class DataType : uint16_t
