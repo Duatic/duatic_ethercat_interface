@@ -50,8 +50,8 @@ void handle_sdo(const std::string& interface)
       std::cout << "   name: " << sdo.name << std::endl;
 
       std::cout << "   object type: " << sdo.obj_type << std::endl;
-      if(sdo.sub_entries.empty()){
-            std::cout << "   data type: " << sdo.data_type << std::endl;
+      if (sdo.sub_entries.empty()) {
+        std::cout << "   data type: " << sdo.data_type << std::endl;
       }
 
       for (const auto& sub : sdo.sub_entries) {

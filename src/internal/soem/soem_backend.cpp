@@ -27,6 +27,26 @@ enum class BusState
   Shutdown
 };
 
+inline std::ostream& operator<<(std::ostream& os, BusState state)
+{
+  switch (state) {
+    case BusState::PreInit:
+      return os << "PreInit";
+    case BusState::Initialized:
+      return os << "Initialized";
+    case BusState::Configured:
+      return os << "Configured";
+    case BusState::Activated:
+      return os << "Activated";
+    case BusState::Operational:
+      return os << "Operational";
+    case BusState::Shutdown:
+      return os << "Shutdown";
+  }
+
+  return os << "Unknown";
+}
+
 struct EthercatBus::BackendImpl
 {
   explicit BackendImpl(const Parameters& params) : params_(params), update_rate_(params_.update_rate)
@@ -82,18 +102,19 @@ struct EthercatBus::BackendImpl
 
       wkc = ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
       if (wkc <= 0) {
-        logging::error() << "Device id " << device_id << ": Working counter too low (" << wkc
-                         << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
-                         << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                         << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+        logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
+                                << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
+                                << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
+                                << static_cast<uint16_t>(sub_index) << ")." << std::endl;
         return SDOReadResult{ .success = false, .actual_size_read = actual_size, .working_counter = wkc };
       }
 
       if (requested_size != actual_size) {
-        logging::error() << "Device id  " << device_id << ": Size mismatch (expected " << requested_size
-                         << " bytes, read " << actual_size << " bytes) for reading SDO (ID: 0x" << std::setfill('0')
-                         << std::setw(4) << std::hex << index << ", SID 0x" << std::setfill('0') << std::setw(2)
-                         << std::hex << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+        logging::error(logger_) << "Device id  " << device_id << ": Size mismatch (expected " << requested_size
+                                << " bytes, read " << actual_size << " bytes) for reading SDO (ID: 0x"
+                                << std::setfill('0') << std::setw(4) << std::hex << index << ", SID 0x"
+                                << std::setfill('0') << std::setw(2) << std::hex << static_cast<uint16_t>(sub_index)
+                                << ")." << std::endl;
         throw BackendError("SDORead size mismatch", Backend::SOEM, actual_size);
       }
     }
@@ -120,10 +141,10 @@ struct EthercatBus::BackendImpl
       const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, data.size(),
                                    const_cast<uint8_t*>(data.data()), timeout);
       if (wkc <= 0) {
-        logging::error() << "Device id " << device_id << ": Working counter too low (" << wkc
-                         << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
-                         << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                         << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+        logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
+                                << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
+                                << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
+                                << static_cast<uint16_t>(sub_index) << ")." << std::endl;
 
         return false;
       }
@@ -177,8 +198,9 @@ struct EthercatBus::BackendImpl
     const int iomap_size = ecx_config_map_group(&context_.context, NULL, 0);
     io_map_.resize(iomap_size, 0);
 
-    ecx_config_map_group(&context_.context, io_map_.data(), 0);
-
+    const int final_iomap_size = ecx_config_map_group(&context_.context, io_map_.data(), 0);
+    logging::info(logger_) << "IOMap size: " << final_iomap_size << std::endl;
+    ecx_configdc(&context_.context);
     update_bus_state(BusState::Configured);
   }
 
@@ -188,7 +210,7 @@ struct EthercatBus::BackendImpl
       throw BackendError("Cannot perform activate - bus needs to be in 'Configured' state", Backend::SOEM);
     }
 
-    // Give the device the chance to perform any last steps before we
+    // Give the device the chance to perform any last steps before we bring them into safeop
     for (auto& device : devices_) {
       device->on_pre_activate();
     }
@@ -213,6 +235,11 @@ struct EthercatBus::BackendImpl
 
     // Bus is now in activated state so the update method knows that it needs to push devices into OPERATIONAL first
     update_bus_state(BusState::Activated);
+
+    // Give the devices the chance to perfrom any last steps before the operational stage starts
+    for (auto& device : devices_) {
+      device->on_post_activate();
+    }
 
     // If configured we now start the ethercat update thread
     if (params_.update_mode == UpdateMode::Synchronous) {
@@ -240,6 +267,10 @@ struct EthercatBus::BackendImpl
       return;
     }
 
+    for (auto& device : devices_) {
+      device->on_pre_shutdown();
+    }
+
     if (get_bus_state() == BusState::Configured || get_bus_state() == BusState::Operational) {
       // Bring all devices into pre-op
       // Note: using device id 0 targets all devices on the bus
@@ -247,6 +278,10 @@ struct EthercatBus::BackendImpl
       wait_for_device_target_state(0, ec_state::EC_STATE_PRE_OP);
       update_bus_state(BusState::Shutdown);
       return;
+    }
+
+    for (auto& device : devices_) {
+      device->on_post_shutdown();
     }
 
     throw BackendError("Invalid BusState in shutdown - dont know what to do", Backend::SOEM);
@@ -283,7 +318,7 @@ struct EthercatBus::BackendImpl
     std::lock_guard<std::mutex> lock(update_mutex_);
     if (params_.update_mode == UpdateMode::Synchronous) {
       if (!update_rate_.step()) {
-        logging::warning() << "Update took too long: " << update_rate_.accumulated_delay_ns() << std::endl;
+        logging::warning(logger_) << "Update took too long: " << update_rate_.accumulated_delay_ns() << std::endl;
       }
     }
   }
@@ -302,7 +337,7 @@ struct EthercatBus::BackendImpl
     // 2. Iterate over objects
     for (int i = 0; i < od_list.Entries; ++i) {
       SDOEntry entry{};
-
+      ecx_readODdescription(&context_.context, i, &od_list);
       entry.index = static_cast<SDOIndex>(od_list.Index[i]);
       entry.obj_type = static_cast<SDOObjectCode>(od_list.ObjectCode[i]);
       entry.data_type = static_cast<DataType>(od_list.DataType[i]);
@@ -369,22 +404,30 @@ struct EthercatBus::BackendImpl
   }
 
 private:
+  // Parameterization
   const std::string interface_;
-  EthercatContext context_;
   const Parameters params_;
+
+  // Ethercat context and bus state tracking
+  EthercatContext context_;
+  // Memory where SOEM will store its pdos aftwards
+  std::vector<uint8_t> io_map_;
   BusState state_{ BusState::PreInit };
 
+  // Device management
   std::vector<std::unique_ptr<EthercatDeviceBase>> devices_;
   std::vector<DeviceContext> device_contexts_;
-  std::vector<uint8_t> io_map_;
 
   // Everything update thread related
   std::mutex update_mutex_;
   std::jthread update_thread_;
   PrecisionUpdateRate update_rate_;
 
+  logging::Logger logger_ = logging::get_logger_with_default_sink("SOEM-Backend");
+
   void update_bus_state(BusState state)
   {
+    logging::info(logger_) << "Bus transitioning into state: " << state;
     state_ = state;
   }
   BusState get_bus_state() const
@@ -422,22 +465,22 @@ private:
       const auto source_size = access_wrapper.raw.size_bytes();
 
       if (target_size != source_size) {
-        logging::error() << "Device: " << device->get_device_id()
-                         << " pdo size (tx) does not match device pdo size: " << source_size << " vs " << target_size
-                         << std::endl;
+        logging::error(logger_) << "Device: " << device->get_device_id()
+                                << " pdo size (tx) does not match device pdo size: " << source_size << " vs "
+                                << target_size << std::endl;
       }
       // Copy it around
       std::memcpy(context_.ecatSlavelist_[device->get_device_id()].outputs, access_wrapper.raw.data(), target_size);
     }
     if (ecx_send_processdata(&context_.context) <= 0) {
-      logging::error() << "Failed to send process data" << std::endl;
+      logging::error(logger_) << "Failed to send process data" << std::endl;
     }
     const int wkc = ecx_receive_processdata(&context_.context, EC_TIMEOUTRET);
 
     const int expected_wkc = context_.context.grouplist[0].outputsWKC * 2 + context_.context.grouplist[0].inputsWKC;
     if (wkc < expected_wkc) {
-      logging::warning() << params_.interface << " Working counter too low: " << wkc
-                         << " expected wkc: " << expected_wkc << std::endl;
+      logging::warning(logger_) << params_.interface << " Working counter too low: " << wkc
+                                << " expected wkc: " << expected_wkc << std::endl;
     }
     // Update the pdo state of every device
     for (auto& device : devices_) {
@@ -447,9 +490,9 @@ private:
       const auto source_size = context_.ecatSlavelist_[device->get_device_id()].Ibytes;
       const auto target_size = access_wrapper.raw.size_bytes();
       if (target_size != source_size) {
-        logging::error() << "Device: " << device->get_device_id()
-                         << " pdo size (rx) does not match device pdo size: " << source_size << " vs " << target_size
-                         << std::endl;
+        logging::error(logger_) << "Device: " << device->get_device_id()
+                                << " pdo size (rx) does not match device pdo size: " << source_size << " vs "
+                                << target_size << std::endl;
       }
       std::memcpy(access_wrapper.raw.data(), context_.ecatSlavelist_[device->get_device_id()].inputs, target_size);
     }
@@ -476,6 +519,14 @@ EthercatBus::~EthercatBus()
 int EthercatBus::initialize()
 {
   return impl_->initialize();
+}
+void EthercatBus::update()
+{
+  // Only forward in case of self managed update
+  if (impl_->get_parameters().update_mode == UpdateMode::Synchronous) {
+    return;
+  }
+  impl_->update();
 }
 const EthercatBus::Parameters& EthercatBus::get_parameters() const
 {
@@ -512,6 +563,18 @@ ObjectDictionary EthercatBus::read_od(const DeviceId device_id, bool full_read)
 std::vector<DeviceInfo> EthercatBus::scan()
 {
   return impl_->scan();
+}
+void EthercatBus::startup()
+{
+  impl_->startup();
+}
+void EthercatBus::activate()
+{
+  impl_->activate();
+}
+void EthercatBus::shutdown()
+{
+  impl_->shutdown();
 }
 
 std::vector<std::string> EthercatBus::list_interfaces()
