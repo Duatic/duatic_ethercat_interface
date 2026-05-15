@@ -119,8 +119,8 @@ struct EthercatBus::BackendImpl
     const int requested_size = data.size();
 
     if (get_bus_state() == BusState::Operational) {
-      SDOReadResult result;
-      std::atomic<bool> transfer_finished{ false };
+      std::atomic<SDOReadResult> result;
+      std::binary_semaphore transfer_finished{ 0 };
       SDOTransfer transfer{ .device_id = device_id,
                             .index = index,
                             .sub_index = sub_index,
@@ -129,11 +129,10 @@ struct EthercatBus::BackendImpl
                             .data_size = requested_size,
                             .timeout = timeout,
                             .transfer_finished_cb = [&](const bool success, const int actual_size, const int wkc) {
-                              // This is potentially unsafe
-                              result.success = true;
-                              result.actual_size_read = actual_size;
-                              result.working_counter = wkc;
-                              transfer_finished.store(true, std::memory_order_release);
+                              result = SDOReadResult{ .success = success,
+                                                      .actual_size_read = actual_size,
+                                                      .working_counter = wkc };
+                              transfer_finished.release();
                             } };
       {
         // Lock it and enque the transfer
@@ -141,11 +140,10 @@ struct EthercatBus::BackendImpl
         sdo_transfer_queue_.push(transfer);
       }  // lock is now released
 
-      while (!transfer_finished.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
-      }
+      // Wait until it is finished
+      transfer_finished.acquire();
 
-      return result;
+      return result.load();
     } else {
       // Directly perform the read
       int actual_size = requested_size;
@@ -185,7 +183,30 @@ struct EthercatBus::BackendImpl
     // When the bus is up and running we should enqueue and SDO access into the main update thread
     // otherwise we can simply directly perform the operation
     if (get_bus_state() == BusState::Operational) {
-      // TODO queue sdo call into update thread
+      std::atomic<SDOWriteResult> result;
+      std::binary_semaphore transfer_finished{ 0 };
+      SDOTransfer transfer{ .device_id = device_id,
+                            .index = index,
+                            .sub_index = sub_index,
+                            .direction = SDOTransfer::Direction::Read,
+                            .data = const_cast<uint8_t*>(data.data()),  // TODO introduce write/read transfers?
+                            .data_size = data.size(),
+                            .timeout = timeout,
+                            .transfer_finished_cb = [&](const bool success, [[maybe_unused]] const int actual_size,
+                                                        const int wkc) {
+                              result = SDOWriteResult{ .success = success, .working_counter = wkc };
+                              transfer_finished.release();
+                            } };
+      {
+        // Lock it and enque the transfer
+        std::lock_guard<std::mutex> lock(update_mutex_);
+        sdo_transfer_queue_.push(transfer);
+      }  // lock is now released
+
+      // Wait until it is finished
+      transfer_finished.acquire();
+
+      return result.load();
     } else {
       // Directly perform the write
       const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, static_cast<int>(data.size()),
