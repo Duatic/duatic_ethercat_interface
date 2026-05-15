@@ -387,6 +387,10 @@ struct EthercatBus::BackendImpl
           const int wkc = ecx_SDOread(&context_.context, transfer.device_id, transfer.index, transfer.sub_index, FALSE,
                                       &actual_size, transfer.data, transfer.timeout);
           transfer.transfer_finished_cb(wkc >= 0, actual_size, wkc);
+        } else {
+          const int wkc = ecx_SDOwrite(&context_.context, transfer.device_id, transfer.index, transfer.sub_index, FALSE,
+                                       transfer.data_size, transfer.data, transfer.timeout);
+          transfer.transfer_finished_cb(wkc >= 0, transfer.data_size, wkc);
         }
       }
     }  // lock is now released
