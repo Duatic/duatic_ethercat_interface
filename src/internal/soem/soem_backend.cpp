@@ -2,6 +2,8 @@
 
 #include <mutex>
 #include <thread>
+#include <queue>
+#include <atomic>
 
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/precision_update_rate.hpp"
@@ -25,6 +27,23 @@ enum class BusState
   Activated,
   Operational,
   Shutdown
+};
+
+struct SDOTransfer
+{
+  enum class Direction
+  {
+    Read,
+    Write
+  };
+  DeviceId device_id;
+  SDOIndex index;
+  SDOSubIndex sub_index;
+  Direction direction;
+  void* data;
+  int data_size;
+  int timeout;
+  std::function<void(bool, int, int)> transfer_finished_cb;
 };
 
 inline std::ostream& operator<<(std::ostream& os, BusState state)
@@ -98,14 +117,40 @@ struct EthercatBus::BackendImpl
     // When the bus is up and running we should enqueue and SDO access into the main update thread
     // otherwise we can simply directly perform the operation
     const int requested_size = data.size();
-    int actual_size = requested_size;
-    int wkc = 0;
+
     if (get_bus_state() == BusState::Operational) {
-      // TODO queue sdo call into update thread
+      SDOReadResult result;
+      std::atomic<bool> transfer_finished{ false };
+      SDOTransfer transfer{ .device_id = device_id,
+                            .index = index,
+                            .sub_index = sub_index,
+                            .direction = SDOTransfer::Direction::Read,
+                            .data = data.data(),
+                            .data_size = requested_size,
+                            .timeout = timeout,
+                            .transfer_finished_cb = [&](const bool success, const int actual_size, const int wkc) {
+                              // This is potentially unsafe
+                              result.success = true;
+                              result.actual_size_read = actual_size;
+                              result.working_counter = wkc;
+                              transfer_finished.store(true, std::memory_order_release);
+                            } };
+      {
+        // Lock it and enque the transfer
+        std::lock_guard<std::mutex> lock(update_mutex_);
+        sdo_transfer_queue_.push(transfer);
+      }  // lock is now released
+
+      while (!transfer_finished.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+
+      return result;
     } else {
       // Directly perform the read
-
-      wkc = ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
+      int actual_size = requested_size;
+      const int wkc =
+          ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
       if (wkc <= 0) {
         logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                                 << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
@@ -122,8 +167,8 @@ struct EthercatBus::BackendImpl
                                 << ")." << std::endl;
         throw BackendError("SDORead size mismatch", Backend::SOEM, actual_size);
       }
+      return SDOReadResult{ .success = true, .actual_size_read = actual_size, .working_counter = wkc };
     }
-    return SDOReadResult{ .success = true, .actual_size_read = actual_size, .working_counter = wkc };
   }
   bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                          const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
@@ -143,7 +188,7 @@ struct EthercatBus::BackendImpl
       // TODO queue sdo call into update thread
     } else {
       // Directly perform the write
-      const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, data.size(),
+      const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, static_cast<int>(data.size()),
                                    const_cast<uint8_t*>(data.data()), timeout);
       if (wkc <= 0) {
         logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
@@ -173,6 +218,7 @@ struct EthercatBus::BackendImpl
       throw BackendError("Device id: " + std::to_string(device->get_device_id()) + " not found on the bus",
                          Backend::SOEM);
     }
+
     // And that we not already handle a device with this id
     if (has_device(device->get_device_id())) {
       throw BackendError("Device with id: " + std::to_string(device->get_device_id()) +
@@ -250,7 +296,9 @@ struct EthercatBus::BackendImpl
     }
 
     // If configured we now start the ethercat update thread
-    if (params_.update_mode == UpdateMode::Synchronous) {
+    if (params_.update_mode == UpdateMode::SelfManaged) {
+      logging::info(logger_) << "Starting update thread with: " << params_.update_rate
+                             << " thread priority: " << params_.realtime_priority;
       update_thread_ = std::jthread([this](std::stop_token st) {
         // Configure rt-prio for this task
         set_realtime_priority(params_.realtime_priority, params_.desired_cpu_core);
@@ -304,6 +352,7 @@ struct EthercatBus::BackendImpl
 
   void update()
   {
+    // First thing after startup is to bring the devices into operational state
     if (get_bus_state() == BusState::Activated) {
       for (const auto& device : devices_) {
         set_device_target_state(device->get_device_id(), ec_state::EC_STATE_OPERATIONAL);
@@ -323,9 +372,26 @@ struct EthercatBus::BackendImpl
         update_bus_state(BusState::Operational);
       }
     }
+    // Perform the actual pdo read/write actions
+    internal_pdo_update();
 
-    std::lock_guard<std::mutex> lock(update_mutex_);
-    if (params_.update_mode == UpdateMode::Synchronous) {
+    {
+      std::lock_guard<std::mutex> lock(update_mutex_);
+      // Check if the sdo transfer queue is not empty and handle 1 transfer
+      if (!sdo_transfer_queue_.empty()) {
+        auto transfer = sdo_transfer_queue_.front();
+        sdo_transfer_queue_.pop();
+
+        if (transfer.direction == SDOTransfer::Direction::Read) {
+          int actual_size = transfer.data_size;
+          const int wkc = ecx_SDOread(&context_.context, transfer.device_id, transfer.index, transfer.sub_index, FALSE,
+                                      &actual_size, transfer.data, transfer.timeout);
+          transfer.transfer_finished_cb(wkc >= 0, actual_size, wkc);
+        }
+      }
+    }  // lock is now released
+
+    if (params_.update_mode == UpdateMode::SelfManaged) {
       if (!update_rate_.step()) {
         logging::warning(logger_) << "Update took too long: " << update_rate_.accumulated_delay_ns() << std::endl;
       }
@@ -415,6 +481,21 @@ struct EthercatBus::BackendImpl
     }
     return result;
   }
+  DeviceInfo scan(const DeviceId device_id)
+  {
+    if (get_bus_state() == BusState::PreInit) {
+      throw BackendError("Need to initialize bus first for a scan", Backend::SOEM);
+    }
+    if (!has_device_on_bus(device_id)) {
+      throw BackendError("Cannot scan for device - it is not on the bus", Backend::SOEM);
+    }
+    return DeviceInfo{ .id = static_cast<DeviceId>(device_id),
+                       .name = std::string(context_.ecatSlavelist_[device_id].name),
+                       .vendor_id = context_.ecatSlavelist_[device_id].eep_man,
+                       .product_id = context_.ecatSlavelist_[device_id].eep_id,
+                       .revision = context_.ecatSlavelist_[device_id].eep_rev,
+                       .has_dc = static_cast<bool>(context_.ecatSlavelist_[device_id].hasdc) };
+  }
 
 private:
   // Parameterization
@@ -434,6 +515,9 @@ private:
   std::mutex update_mutex_;
   std::jthread update_thread_;
   PrecisionUpdateRate update_rate_;
+
+  // Synchronization of sdo read/writes into update thread
+  std::queue<SDOTransfer> sdo_transfer_queue_;
 
   logging::Logger logger_;
 
@@ -610,6 +694,10 @@ std::vector<std::string> EthercatBus::list_interfaces()
 
   ec_free_adapters(adapter);
   return result;
+}
+DeviceInfo EthercatBus::scan(const DeviceId device_id)
+{
+  return impl_->scan(device_id);
 }
 
 }  // namespace duatic::ethercat_interface

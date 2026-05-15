@@ -3,7 +3,8 @@
 
 namespace duatic::ethercat_interface
 {
-EthercatDeviceBase::EthercatDeviceBase(EthercatBus* bus, DeviceId device_id) : bus_(bus), device_id_(device_id)
+EthercatDeviceBase::EthercatDeviceBase(EthercatBus* bus, const DeviceInfo& device_info)
+  : bus_(bus), device_info_(device_info)
 {
 }
 template <typename T>

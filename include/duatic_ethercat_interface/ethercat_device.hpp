@@ -29,7 +29,7 @@ public:
     RawTxPdo raw;
     mutable std::mutex access_lock;
   };
-  EthercatDeviceBase(EthercatBus* bus, DeviceId device_id);
+  EthercatDeviceBase(EthercatBus* bus, const DeviceInfo& device_info);
   virtual ~EthercatDeviceBase() = default;
 
   /**
@@ -56,39 +56,62 @@ public:
   /**
    * @brief get_device_id - get the id of this specific device on the bus
    */
-  virtual DeviceId get_device_id() const
+  DeviceId get_device_id() const
   {
-    return device_id_;
+    return device_info_.id;
   }
+  /**
+   * @brief get_device_name - get the name of this specific device on the bus
+   * @note this is the name obtained from the device
+   */
+  const std::string& get_device_name() const
+  {
+    return device_info_.name;
+  }
+  /**
+   * @brief get_device_info - collection of all information that the backend usually can provide about a device
+   */
+  const DeviceInfo& get_device_info() const
+  {
+    return device_info_;
+  }
+
+  /**
+   * @brief on_pdo_configured - callback which gets called as soon as the pdos has been setup and configured inn the
+   * backend
+   * @note This is already implemented in the EthercatDevice and GenericEthercatDevice classes. There is no need to use
+   * override this yourself
+   */
   virtual void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) = 0;
 
   // Functions which provide a safe wrapper around the raw rx/tx data
+  // These are usually only used by the backend
   virtual RxPdoWrapper& access_rx_pdo() = 0;
   virtual TxPdoWrapper& access_tx_pdo() = 0;
 
+  // Helper functions for performing sdo read and writes
   template <typename T>
   std::optional<T> sdo_read(const SDOIndex index, const SDOSubIndex sub_index = 0);
-
   template <typename T>
   std::optional<std::string> sdo_read(const SDOIndex index, const SDOSubIndex sub_index = 0);
 
   template <typename T>
   bool sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index = 0);
-
   bool sdo_write(const std::string value, const SDOIndex index, const SDOSubIndex sub_index = 0);
 
   const ObjectDictionary& read_od(bool full_read = false) const;
 
 protected:
+  // Internal pointer to the actual bus
   EthercatBus* bus_{ nullptr };
-  DeviceId device_id_{ 0 };
+  DeviceInfo device_info_{};
 };
 
 /**
  * @brief Actual base class which should be used in the end by a user. It encodes the selected PDOs
  */
 template <typename RXPDO, typename TXPDO>
-class EthercatDevice : public EthercatDeviceBase
+class EthercatDevice final : public EthercatDeviceBase
 {
 public:
   struct PDOState
@@ -97,7 +120,7 @@ public:
     TXPDO tx;
   };
 
-  EthercatDevice(EthercatBus* bus, DeviceId device_id) : EthercatDeviceBase(bus, device_id)
+  EthercatDevice(EthercatBus* bus, DeviceInfo& device_info) : EthercatDeviceBase(bus, device_info)
   {
     rx_pdo_access_wrapper_.raw =
         std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&pdo_state_.rx, sizeof(TXPDO)));
@@ -114,6 +137,7 @@ public:
   }
   void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) override final
   {
+    // Only check if sizes are matching
     if (configured_rx_pdo_size != sizeof(RXPDO)) {
       throw DeviceConfigurationError("RXPDO size does not match");
     }
@@ -122,9 +146,8 @@ public:
     }
   }
 
-protected:
   // By providing internal get/set functions for the PDO types
-  // we avoid that any downstream class needs to handle any locking
+  // we avoid that any user needs to handle any locking
   // By returning a copy we make sure that a user does not need to worry about disturbing the internal state
 
   RXPDO get_rx_pdo() const
@@ -159,7 +182,7 @@ public:
   using RXPDO = std::vector<uint8_t>;
   using TXPDO = std::vector<uint8_t>;
 
-  GenericEthercatDevice(EthercatBus* bus, DeviceId device_id) : EthercatDeviceBase(bus, device_id)
+  GenericEthercatDevice(EthercatBus* bus, const DeviceInfo& device_info) : EthercatDeviceBase(bus, device_info)
   {
   }
   void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) override final

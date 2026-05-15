@@ -14,7 +14,9 @@ namespace duatic::ethercat_interface
 
 enum class UpdateMode
 {
+  // Update is done externaly
   Synchronous,
+  // Update is handled by the bus itself
   SelfManaged
 };
 
@@ -24,10 +26,14 @@ class EthercatBus
 public:
   struct Parameters
   {
+    // Name of the ethernet interface
     std::string interface;
+    // Update step rate in nanoseconds (default 1kHz)
     std::chrono::nanoseconds update_rate{ 1000000 };
+    // Update mode - see @ref UpdateMode for possible modes
     UpdateMode update_mode{ UpdateMode::SelfManaged };
 
+    // In case of UpdateMode::SelfManaged priority and desired cpu core for the update thread
     int realtime_priority{ 60 };
     int desired_cpu_core{ -1 };
   };
@@ -43,6 +49,8 @@ public:
   int initialize();
 
   std::vector<DeviceInfo> scan();
+  DeviceInfo scan(const DeviceId device_id);
+
   ObjectDictionary read_od(const DeviceId device_id, bool full_read = false);
 
   /**
@@ -81,7 +89,7 @@ public:
     }
     // We request the backend to create new device context for the device
     // and create the actual device and give it to the backend which also has the ownership
-    auto device = std::make_unique<T>(this, device_id);
+    auto device = std::make_unique<T>(this, scan(device_id));
     T* raw_device = device.get();
     add_device(std::move(device));
     // We return a NON-OWNING pointer to the device
