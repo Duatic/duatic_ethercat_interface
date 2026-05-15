@@ -2,32 +2,34 @@
 
 #include <cstring>
 #include <cassert>
+#include <mutex>
 
 #include "duatic_ethercat_interface/types.hpp"
-#include "duatic_ethercat_interface/device_context.hpp"
+#include "duatic_ethercat_interface/exceptions.hpp"
+#include "duatic_ethercat_interface/object_dictionary.hpp"
 
 namespace duatic::ethercat_interface
 {
-
+class EthercatBus;
 class EthercatDeviceBase
 {
 public:
-  using RawRxPdo = std::span<uint8_t>;
-  using RawTxPdo = std::span<const uint8_t>;
+  using RawRxPdo = std::span<const uint8_t>;  // Const because the backend does not need to write to what is sent
+  using RawTxPdo = std::span<uint8_t>;        // non const because the backend needs to write to that data range
 
+  // Wrapper around the access to the actual pdo data
+  // Provides the necessary mutex to safety access the corresponding data
   struct RxPdoWrapper
   {
     RawRxPdo raw;
-    std::mutex access_lock;
+    mutable std::mutex access_lock;
   };
   struct TxPdoWrapper
   {
     RawTxPdo raw;
-    std::mutex access_lock;
+    mutable std::mutex access_lock;
   };
-  EthercatDeviceBase(DeviceContext& context) : context_{ &context }
-  {
-  }
+  EthercatDeviceBase(EthercatBus* bus, DeviceId device_id);
   virtual ~EthercatDeviceBase() = default;
 
   /**
@@ -56,15 +58,30 @@ public:
    */
   virtual DeviceId get_device_id() const
   {
-    return context_->get_device_id();
+    return device_id_;
   }
+  virtual void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) = 0;
 
   // Functions which provide a safe wrapper around the raw rx/tx data
   virtual RxPdoWrapper& access_rx_pdo() = 0;
   virtual TxPdoWrapper& access_tx_pdo() = 0;
 
+  template <typename T>
+  std::optional<T> sdo_read(const SDOIndex index, const SDOSubIndex sub_index = 0);
+
+  template <typename T>
+  std::optional<std::string> sdo_read(const SDOIndex index, const SDOSubIndex sub_index = 0);
+
+  template <typename T>
+  bool sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index = 0);
+
+  bool sdo_write(const std::string value, const SDOIndex index, const SDOSubIndex sub_index = 0);
+
+  const ObjectDictionary& read_od(bool full_read = false) const;
+
 protected:
-  DeviceContext* context_{ nullptr };
+  EthercatBus* bus_{ nullptr };
+  DeviceId device_id_{ 0 };
 };
 
 /**
@@ -80,11 +97,11 @@ public:
     TXPDO tx;
   };
 
-  EthercatDevice(DeviceContext& context) : EthercatDeviceBase(context)
+  EthercatDevice(EthercatBus* bus, DeviceId device_id) : EthercatDeviceBase(bus, device_id)
   {
     rx_pdo_access_wrapper_.raw =
-        std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&pdo_state_.tx, sizeof(TXPDO)));
-    tx_pdo_access_wrapper_.raw = std::span<uint8_t>(reinterpret_cast<uint8_t*>(&pdo_state_.rx, sizeof(RXPDO)));
+        std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&pdo_state_.rx, sizeof(TXPDO)));
+    tx_pdo_access_wrapper_.raw = std::span<uint8_t>(reinterpret_cast<uint8_t*>(&pdo_state_.tx, sizeof(RXPDO)));
   }
 
   RxPdoWrapper& access_rx_pdo() override final
@@ -94,6 +111,15 @@ public:
   TxPdoWrapper& access_tx_pdo() override final
   {
     return tx_pdo_access_wrapper_;
+  }
+  void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) override final
+  {
+    if (configured_rx_pdo_size != sizeof(RXPDO)) {
+      throw DeviceConfigurationError("RXPDO size does not match");
+    }
+    if (configured_tx_pdo_size != sizeof(TXPDO)) {
+      throw DeviceConfigurationError("TXPDO size does not match");
+    }
   }
 
 protected:
@@ -106,10 +132,10 @@ protected:
     std::lock_guard<std::mutex> lock(rx_pdo_access_wrapper_.access_lock);
     return pdo_state_.rx;
   }
-  void set_tx_pdo(const TXPDO& tx)
+  void set_rx_pdo(const RXPDO& rx)
   {
-    std::lock_guard<std::mutex> lock(tx_pdo_access_wrapper_.access_lock);
-    pdo_state_.tx = tx;
+    std::lock_guard<std::mutex> lock(rx_pdo_access_wrapper_.access_lock);
+    pdo_state_.rx = rx;
   }
   TXPDO get_tx_pdo() const
   {
@@ -119,6 +145,66 @@ protected:
 
 private:
   PDOState pdo_state_;
+  RxPdoWrapper rx_pdo_access_wrapper_;
+  TxPdoWrapper tx_pdo_access_wrapper_;
+};
+
+/**
+ * @brief a generic wrapper around an ethercat device which allows non typed access to the device
+ * @note this is for sdk / tooling usage only
+ */
+class GenericEthercatDevice final : public EthercatDeviceBase
+{
+public:
+  using RXPDO = std::vector<uint8_t>;
+  using TXPDO = std::vector<uint8_t>;
+
+  GenericEthercatDevice(EthercatBus* bus, DeviceId device_id) : EthercatDeviceBase(bus, device_id)
+  {
+  }
+  void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) override final
+  {
+    // For the generic device we need to allocate the necessary buffers
+    rx_pdo_buffer_.resize(configured_rx_pdo_size, 0);
+    tx_pdo_buffer_.resize(configured_tx_pdo_size, 0);
+
+    rx_pdo_access_wrapper_.raw = std::span(rx_pdo_buffer_);
+    tx_pdo_access_wrapper_.raw = std::span(tx_pdo_buffer_);
+
+    pdo_initialized = true;
+  }
+
+  RXPDO get_rx_pdo() const
+  {
+    if (!pdo_initialized) {
+      throw DeviceConfigurationError("Cannot access rx pdo - PDOs have not been configured yet");
+    }
+
+    std::lock_guard<std::mutex> lock(rx_pdo_access_wrapper_.access_lock);
+    return rx_pdo_buffer_;
+  }
+  void set_rx_pdo(const RXPDO& rx)
+  {
+    if (!pdo_initialized) {
+      throw DeviceConfigurationError("Cannot access rx pdo - PDOs have not been configured yet");
+    }
+    std::lock_guard<std::mutex> lock(rx_pdo_access_wrapper_.access_lock);
+    rx_pdo_buffer_ = rx;
+  }
+  TXPDO get_tx_pdo() const
+  {
+    if (!pdo_initialized) {
+      throw DeviceConfigurationError("Cannot access tx pdo - PDOs have not been configured yet");
+    }
+    std::lock_guard<std::mutex> lock(tx_pdo_access_wrapper_.access_lock);
+    return tx_pdo_buffer_;
+  }
+
+private:
+  bool pdo_initialized = false;
+  std::vector<uint8_t> rx_pdo_buffer_;
+  std::vector<uint8_t> tx_pdo_buffer_;
+
   RxPdoWrapper rx_pdo_access_wrapper_;
   TxPdoWrapper tx_pdo_access_wrapper_;
 };

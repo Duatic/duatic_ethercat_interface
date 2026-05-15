@@ -7,7 +7,6 @@
 #include <chrono>
 
 #include "duatic_ethercat_interface/ethercat_device.hpp"
-#include "duatic_ethercat_interface/device_context.hpp"
 #include "duatic_ethercat_interface/types.hpp"
 
 namespace duatic::ethercat_interface
@@ -82,7 +81,7 @@ public:
     }
     // We request the backend to create new device context for the device
     // and create the actual device and give it to the backend which also has the ownership
-    auto device = std::make_unique<T>(create_device_context(this, device_id));
+    auto device = std::make_unique<T>(this, device_id);
     T* raw_device = device.get();
     add_device(std::move(device));
     // We return a NON-OWNING pointer to the device
@@ -126,9 +125,6 @@ private:
 
   // We only accept devices that we also allocated ourselves
   void add_device(std::unique_ptr<EthercatDeviceBase> device);
-  DeviceContext& create_device_context(EthercatBus* bus, const DeviceId device_id);
-
-  friend class DeviceContext;
 };
 
 }  // namespace duatic::ethercat_interface

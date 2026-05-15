@@ -168,6 +168,11 @@ struct EthercatBus::BackendImpl
     if (get_bus_state() != BusState::Initialized || get_bus_state() != BusState::Configured) {
       throw BackendError("Cannot attach device to bus - bus it not in the correct state", Backend::SOEM);
     }
+    // Check if the device even is on the bus
+    if (has_device_on_bus(device->get_device_id())) {
+      throw BackendError("Device id: " + std::to_string(device->get_device_id()) + " not found on the bus",
+                         Backend::SOEM);
+    }
     // And that we not already handle a device with this id
     if (has_device(device->get_device_id())) {
       throw BackendError("Device with id: " + std::to_string(device->get_device_id()) +
@@ -175,17 +180,6 @@ struct EthercatBus::BackendImpl
                          Backend::SOEM);
     }
     devices_.emplace_back(std::move(device));
-  }
-
-  DeviceContext& create_device_context(EthercatBus* bus, const DeviceId device_id)
-  {
-    // Check if the device even is on the bus
-    if (has_device_on_bus(device_id)) {
-      throw BackendError("Device id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
-    }
-    // If yes we can create new device context
-    device_contexts_.emplace_back(DeviceContext{ bus, device_id });
-    return device_contexts_.back();
   }
 
   void startup()
@@ -210,6 +204,12 @@ struct EthercatBus::BackendImpl
     logging::info(logger_) << "IOMap size: " << final_iomap_size << std::endl;
     ecx_configdc(&context_.context);
     update_bus_state(BusState::Configured);
+
+    // Notify all devices that the pdos have now been configured
+    for (auto& device : devices_) {
+      device->on_pdo_configured(context_.ecatSlavelist_[device->get_device_id()].Obytes,
+                                context_.ecatSlavelist_[device->get_device_id()].Ibytes);
+    }
   }
 
   void activate()
@@ -429,7 +429,6 @@ private:
 
   // Device management
   std::vector<std::unique_ptr<EthercatDeviceBase>> devices_;
-  std::vector<DeviceContext> device_contexts_;
 
   // Everything update thread related
   std::mutex update_mutex_;
@@ -468,7 +467,9 @@ private:
     // Take the latest tx pdo state from every device
     for (auto& device : devices_) {
       // We take the data in the device and copy it to the corresponding device memory
-      auto& access_wrapper = device->access_tx_pdo();
+      // NOTE the direction: rx is what the device receives and we send
+      // in SOEM: ouputs
+      auto& access_wrapper = device->access_rx_pdo();
 
       // As this piece of memory can be access by multiple threads we need to lock it
       std::lock_guard<std::mutex> lock(access_wrapper.access_lock);
@@ -481,6 +482,7 @@ private:
         logging::error(logger_) << "Device: " << device->get_device_id()
                                 << " pdo size (tx) does not match device pdo size: " << source_size << " vs "
                                 << target_size << std::endl;
+        continue;
       }
       // Copy it around
       std::memcpy(context_.ecatSlavelist_[device->get_device_id()].outputs, access_wrapper.raw.data(), target_size);
@@ -497,7 +499,9 @@ private:
     }
     // Update the pdo state of every device
     for (auto& device : devices_) {
-      auto& access_wrapper = device->access_rx_pdo();
+      // NOTE the direction: tx is what the devices sends and what we recieve
+      // in SOEM: inputs
+      auto& access_wrapper = device->access_tx_pdo();
       std::lock_guard<std::mutex> lock(access_wrapper.access_lock);
 
       const auto source_size = context_.ecatSlavelist_[device->get_device_id()].Ibytes;
@@ -506,6 +510,7 @@ private:
         logging::error(logger_) << "Device: " << device->get_device_id()
                                 << " pdo size (rx) does not match device pdo size: " << source_size << " vs "
                                 << target_size << std::endl;
+        continue;
       }
       std::memcpy(access_wrapper.raw.data(), context_.ecatSlavelist_[device->get_device_id()].inputs, target_size);
     }
@@ -553,10 +558,7 @@ bool EthercatBus::has_device(const DeviceId device_id) const
 {
   return impl_->has_device(device_id);
 }
-DeviceContext& EthercatBus::create_device_context(EthercatBus* bus, const DeviceId device_id)
-{
-  return impl_->create_device_context(bus, device_id);
-}
+
 SDOReadResult EthercatBus::read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
                                             const SDOSubIndex sub_index)
 {
