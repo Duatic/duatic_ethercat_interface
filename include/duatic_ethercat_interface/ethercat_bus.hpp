@@ -30,8 +30,6 @@ public:
     std::string interface;
     // Update step rate in nanoseconds (default 1kHz)
     std::chrono::nanoseconds update_rate{ 1000000 };
-    // Update mode - see @ref UpdateMode for possible modes
-    UpdateMode update_mode{ UpdateMode::SelfManaged };
 
     // In case of UpdateMode::SelfManaged priority and desired cpu core for the update thread
     int realtime_priority{ 60 };
@@ -77,24 +75,9 @@ public:
    * @note in case UpdateMode::Synchronous was used this method does nothing
    */
   void update();
+  void spin();
 
-  template <typename T>
-  T* allocate_device(const DeviceId device_id)
-  {
-    // This is a non straight forward pattern but makes sense to bring in some allocation safety
-    // We seperate context creation and device creation because we cannot pass the template to the implemenation
-    // so the actual type "T" is only know
-    if (has_device(device_id)) {
-      throw std::runtime_error("Device is already handled by bus");
-    }
-    // We request the backend to create new device context for the device
-    // and create the actual device and give it to the backend which also has the ownership
-    auto device = std::make_unique<T>(this, scan(device_id));
-    T* raw_device = device.get();
-    add_device(std::move(device));
-    // We return a NON-OWNING pointer to the device
-    return raw_device;
-  }
+  void attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device);
   /**
    * @brief get_parameters - obtain the configuration objects
    * @return const reference to used Paramters
@@ -119,6 +102,19 @@ public:
                         const SDOSubIndex sub_index, const SDOReadCallback& cb);
   bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                          const SDOSubIndex sub_index, const SDOWriteCallback& cb);
+  /**
+   * @brief read_rx_pdo - obtain raw pdo data of the rx pdo (rx -> direction the device receives)
+   */
+  std::vector<uint8_t> read_rx_pdo( const DeviceId device_id) const;
+  /**
+   * @brief write_rx_pdo - write raw data of the rx pdo (rx -> direction the device receives)
+   */
+  void write_rx_pdo( const DeviceId device_id,const std::vector<uint8_t>& data);
+  /**
+   * @brief read_tx_pdo - read raw data of the tx pdo (tx -> direction the device transmits)
+   */
+  std::vector<uint8_t> read_tx_pdo( const DeviceId device_id) const;
+
 
   /**
    * @brief list_interface - provide a list with all supported interface names
@@ -131,8 +127,7 @@ private:
   class BackendImpl;
   std::unique_ptr<BackendImpl> impl_;
 
-  // We only accept devices that we also allocated ourselves
-  void add_device(std::unique_ptr<EthercatDeviceBase> device);
+    
 };
 
 }  // namespace duatic::ethercat_interface

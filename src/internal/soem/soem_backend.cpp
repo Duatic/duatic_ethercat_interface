@@ -136,7 +136,7 @@ struct EthercatBus::BackendImpl
                             } };
       {
         // Lock it and enque the transfer
-        std::lock_guard<std::mutex> lock(update_mutex_);
+        std::lock_guard<std::mutex> lock(sdo_update_mutex_);
         sdo_transfer_queue_.push(transfer);
       }  // lock is now released
 
@@ -199,7 +199,7 @@ struct EthercatBus::BackendImpl
                             } };
       {
         // Lock it and enque the transfer
-        std::lock_guard<std::mutex> lock(update_mutex_);
+        std::lock_guard<std::mutex> lock(sdo_update_mutex_);
         sdo_transfer_queue_.push(transfer);
       }  // lock is now released
 
@@ -228,25 +228,23 @@ struct EthercatBus::BackendImpl
     return context_.ecatSlavecount_;
   }
 
-  void add_device(std::unique_ptr<EthercatDeviceBase> device)
+  void attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device)
   {
     // As we need to perfrom the right PDO mapping we need to make sure that the bus is in the right state
     if (get_bus_state() != BusState::Initialized || get_bus_state() != BusState::Configured) {
       throw BackendError("Cannot attach device to bus - bus it not in the correct state", Backend::SOEM);
     }
     // Check if the device even is on the bus
-    if (has_device_on_bus(device->get_device_id())) {
-      throw BackendError("Device id: " + std::to_string(device->get_device_id()) + " not found on the bus",
-                         Backend::SOEM);
+    if (has_device_on_bus(device_id)) {
+      throw BackendError("Device id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
     }
 
     // And that we not already handle a device with this id
-    if (has_device(device->get_device_id())) {
-      throw BackendError("Device with id: " + std::to_string(device->get_device_id()) +
-                             " is already handled by this bus",
+    if (has_device(device_id)) {
+      throw BackendError("Device with id: " + std::to_string(device_id) + " is already handled by this bus",
                          Backend::SOEM);
     }
-    devices_.emplace_back(std::move(device));
+    devices_.emplace_back(device);
   }
 
   void startup()
@@ -314,19 +312,6 @@ struct EthercatBus::BackendImpl
     // Give the devices the chance to perfrom any last steps before the operational stage starts
     for (auto& device : devices_) {
       device->on_post_activate();
-    }
-
-    // If configured we now start the ethercat update thread
-    if (params_.update_mode == UpdateMode::SelfManaged) {
-      logging::info(logger_) << "Starting update thread with: " << params_.update_rate
-                             << " thread priority: " << params_.realtime_priority;
-      update_thread_ = std::jthread([this](std::stop_token st) {
-        // Configure rt-prio for this task
-        set_realtime_priority(params_.realtime_priority, params_.desired_cpu_core);
-        while (!st.stop_requested()) {
-          this->update();
-        }
-      });
     }
   }
 
@@ -397,7 +382,7 @@ struct EthercatBus::BackendImpl
     internal_pdo_update();
 
     {
-      std::lock_guard<std::mutex> lock(update_mutex_);
+      std::lock_guard<std::mutex> lock(sdo_update_mutex_);
       // Check if the sdo transfer queue is not empty and handle 1 transfer
       if (!sdo_transfer_queue_.empty()) {
         auto transfer = sdo_transfer_queue_.front();
@@ -415,12 +400,6 @@ struct EthercatBus::BackendImpl
         }
       }
     }  // lock is now released
-
-    if (params_.update_mode == UpdateMode::SelfManaged) {
-      if (!update_rate_.step()) {
-        logging::warning(logger_) << "Update took too long: " << update_rate_.accumulated_delay_ns() << std::endl;
-      }
-    }
   }
 
   std::vector<SDOEntry> read_od_from_device(const DeviceId device_id, bool full_read)
@@ -522,6 +501,68 @@ struct EthercatBus::BackendImpl
                        .has_dc = static_cast<bool>(context_.ecatSlavelist_[device_id].hasdc) };
   }
 
+  std::vector<uint8_t> read_rx_pdo(const DeviceId device_id) const
+  {
+    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Initialized) {
+      throw BackendError("Cannot access pdo for device - pdo needs to be configured first");
+    }
+    if (!has_device_on_bus(device_id)) {
+      throw BackendError("Cannot access pdo for device - it is not on the bus", Backend::SOEM);
+    }
+
+    const auto size = context_.ecatSlavelist_[device_id].Obytes;
+
+    std::vector<uint8_t> result(size, 0);
+    // TODO lock
+
+    std::memcpy(result.data(), context_.ecatSlavelist_[device_id].outputs, size);
+
+    return result;
+  }
+
+  void write_rx_pdo(const DeviceId device_id, const std::vector<uint8_t>& data)
+  {
+    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Initialized) {
+      throw BackendError("Cannot access pdo for device - pdo needs to be configured first");
+    }
+    if (!has_device_on_bus(device_id)) {
+      throw BackendError("Cannot access pdo for device - it is not on the bus", Backend::SOEM);
+    }
+
+    const auto size = context_.ecatSlavelist_[device_id].Obytes;
+    if (data.size() != size) {
+      throw BackendError("PDO size mismatch - cannot assign", Backend::SOEM);
+    }
+    // TODO LOCK
+    std::memcpy(context_.ecatSlavelist_[device_id].outputs, data.data(), size);
+  }
+
+  std::vector<uint8_t> read_tx_pdo(const DeviceId device_id) const
+  {
+    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Initialized) {
+      throw BackendError("Cannot access pdo for device - pdo needs to be configured first");
+    }
+    if (!has_device_on_bus(device_id)) {
+      throw BackendError("Cannot access pdo for device - it is not on the bus", Backend::SOEM);
+    }
+
+    const auto size = context_.ecatSlavelist_[device_id].Ibytes;
+    std::vector<uint8_t> result(size, 0);
+    // TODO LOCK
+    std::memcpy(result.data(), context_.ecatSlavelist_[device_id].inputs, size);
+    return result;
+  }
+
+  void spin()
+  {
+    update_thread_ = std::jthread([&]() {
+      this->update();
+      if (!this->update_rate_.step()) {
+        logging::warning() << "Could not keep update rate: " << this->update_rate_.accumulated_delay_ns() << std::endl;
+      }
+    });
+  }
+
 private:
   // Parameterization
   const std::string interface_;
@@ -534,10 +575,11 @@ private:
   BusState state_{ BusState::PreInit };
 
   // Device management
-  std::vector<std::unique_ptr<EthercatDeviceBase>> devices_;
+  std::vector<std::shared_ptr<EthercatDeviceBase>> devices_;
 
   // Everything update thread related
-  std::mutex update_mutex_;
+  std::mutex sdo_update_mutex_;
+  std::mutex pdo_update_mutex_;
   std::jthread update_thread_;
   PrecisionUpdateRate update_rate_;
 
@@ -575,53 +617,24 @@ private:
   {
     // Take the latest tx pdo state from every device
     for (auto& device : devices_) {
-      // We take the data in the device and copy it to the corresponding device memory
-      // NOTE the direction: rx is what the device receives and we send
-      // in SOEM: ouputs
-      auto& access_wrapper = device->access_rx_pdo();
-
-      // As this piece of memory can be access by multiple threads we need to lock it
-      std::lock_guard<std::mutex> lock(access_wrapper.access_lock);
-
-      // pdo size check
-      const auto target_size = context_.ecatSlavelist_[device->get_device_id()].Obytes;
-      const auto source_size = access_wrapper.raw.size_bytes();
-
-      if (target_size != source_size) {
-        logging::error(logger_) << "Device: " << device->get_device_id()
-                                << " pdo size (tx) does not match device pdo size: " << source_size << " vs "
-                                << target_size << std::endl;
-        continue;
+      device->update_write();
+    }
+    {  // Important to lock after update_write(), otherwise update_write will deadlock
+      std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+      if (ecx_send_processdata(&context_.context) <= 0) {
+        logging::error(logger_) << "Failed to send process data" << std::endl;
       }
-      // Copy it around
-      std::memcpy(context_.ecatSlavelist_[device->get_device_id()].outputs, access_wrapper.raw.data(), target_size);
-    }
-    if (ecx_send_processdata(&context_.context) <= 0) {
-      logging::error(logger_) << "Failed to send process data" << std::endl;
-    }
-    const int wkc = ecx_receive_processdata(&context_.context, EC_TIMEOUTRET);
+      const int wkc = ecx_receive_processdata(&context_.context, EC_TIMEOUTRET);
 
-    const int expected_wkc = context_.context.grouplist[0].outputsWKC * 2 + context_.context.grouplist[0].inputsWKC;
-    if (wkc < expected_wkc) {
-      logging::warning(logger_) << params_.interface << " Working counter too low: " << wkc
-                                << " expected wkc: " << expected_wkc << std::endl;
-    }
+      const int expected_wkc = context_.context.grouplist[0].outputsWKC * 2 + context_.context.grouplist[0].inputsWKC;
+      if (wkc < expected_wkc) {
+        logging::warning(logger_) << params_.interface << " Working counter too low: " << wkc
+                                  << " expected wkc: " << expected_wkc << std::endl;
+      }
+    }  // Important to unlock here, otherwise update_read() will deadlock
     // Update the pdo state of every device
     for (auto& device : devices_) {
-      // NOTE the direction: tx is what the devices sends and what we recieve
-      // in SOEM: inputs
-      auto& access_wrapper = device->access_tx_pdo();
-      std::lock_guard<std::mutex> lock(access_wrapper.access_lock);
-
-      const auto source_size = context_.ecatSlavelist_[device->get_device_id()].Ibytes;
-      const auto target_size = access_wrapper.raw.size_bytes();
-      if (target_size != source_size) {
-        logging::error(logger_) << "Device: " << device->get_device_id()
-                                << " pdo size (rx) does not match device pdo size: " << source_size << " vs "
-                                << target_size << std::endl;
-        continue;
-      }
-      std::memcpy(access_wrapper.raw.data(), context_.ecatSlavelist_[device->get_device_id()].inputs, target_size);
+      device->update_read();
     }
   }
 
@@ -650,18 +663,18 @@ int EthercatBus::initialize()
 void EthercatBus::update()
 {
   // Only forward in case of self managed update
-  if (impl_->get_parameters().update_mode == UpdateMode::Synchronous) {
-    return;
-  }
   impl_->update();
 }
 const EthercatBus::Parameters& EthercatBus::get_parameters() const
 {
   return impl_->get_parameters();
 }
-void EthercatBus::add_device(std::unique_ptr<EthercatDeviceBase> device)
+void EthercatBus::attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device)
 {
-  impl_->add_device(std::move(device));
+  impl_->attach_device(device_id, device);
+  // Important: As the impl_ does not know the bus we need to perform the configure step here
+  const auto scan_result = scan(device_id);
+  device->configure(this, scan_result);
 }
 bool EthercatBus::has_device(const DeviceId device_id) const
 {
@@ -723,6 +736,26 @@ std::vector<std::string> EthercatBus::list_interfaces()
 DeviceInfo EthercatBus::scan(const DeviceId device_id)
 {
   return impl_->scan(device_id);
+}
+
+std::vector<uint8_t> EthercatBus::read_rx_pdo(const DeviceId device_id) const
+{
+  return impl_->read_rx_pdo(device_id);
+}
+
+void EthercatBus::write_rx_pdo(const DeviceId device_id, const std::vector<uint8_t>& data)
+{
+  impl_->write_rx_pdo(device_id, data);
+}
+
+std::vector<uint8_t> EthercatBus::read_tx_pdo(const DeviceId device_id) const
+{
+  return impl_->read_tx_pdo(device_id);
+}
+
+void EthercatBus::spin()
+{
+  impl_->spin();
 }
 
 }  // namespace duatic::ethercat_interface

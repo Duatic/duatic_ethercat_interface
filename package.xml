@@ -13,7 +13,7 @@
   <test_depend>ament_lint_common</test_depend>
 
   <depend>soem_vendor</depend>
-  <depend>etherlab_master_vendor</depend>
+  <!--<depend>etherlab_master_vendor</depend>-->
   <depend>duatic_message_logger</depend>
 
   <!--Tooling dependencies-->

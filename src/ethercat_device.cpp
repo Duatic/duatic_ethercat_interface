@@ -3,9 +3,14 @@
 
 namespace duatic::ethercat_interface
 {
-EthercatDeviceBase::EthercatDeviceBase(EthercatBus* bus, const DeviceInfo& device_info)
-  : bus_(bus), device_info_(device_info)
+EthercatDeviceBase::EthercatDeviceBase()
 {
+}
+void EthercatDeviceBase::configure(EthercatBus* bus, DeviceInfo device_info)
+{
+  device_info_ = device_info;
+  bus_ = bus;
+  on_configure();
 }
 template <typename T>
 std::optional<T> EthercatDeviceBase::sdo_read(const SDOIndex index, const SDOSubIndex sub_index)
@@ -89,9 +94,18 @@ template bool EthercatDeviceBase::sdo_write<int64_t>(const int64_t, SDOIndex, SD
 template bool EthercatDeviceBase::sdo_write<float>(const float, SDOIndex, SDOSubIndex);
 template bool EthercatDeviceBase::sdo_write<double>(const double, SDOIndex, SDOSubIndex);
 
-const ObjectDictionary& EthercatDeviceBase::read_od(bool full_read) const
+ObjectDictionary EthercatDeviceBase::read_od(bool full_read) const
 {
   return bus_->read_od(get_device_id(), full_read);
 }
+
+void GenericEthercatDevice::update_write()
+{
+  bus_->write_rx_pdo(get_device_id(), rx_pdo_);
+}
+void GenericEthercatDevice::update_read()
+{
+  tx_pdo_ = bus_->read_tx_pdo(get_device_id());
+};
 
 }  // namespace duatic::ethercat_interface
