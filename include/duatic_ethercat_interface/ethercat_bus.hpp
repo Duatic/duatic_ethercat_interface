@@ -12,14 +12,6 @@
 namespace duatic::ethercat_interface
 {
 
-enum class UpdateMode
-{
-  // Update is done externaly
-  Synchronous,
-  // Update is handled by the bus itself
-  SelfManaged
-};
-
 // NOTE all non realtime critical functions can throw
 class EthercatBus
 {
@@ -28,12 +20,6 @@ public:
   {
     // Name of the ethernet interface
     std::string interface;
-    // Update step rate in nanoseconds (default 1kHz)
-    std::chrono::nanoseconds update_rate{ 1000000 };
-
-    // In case of UpdateMode::SelfManaged priority and desired cpu core for the update thread
-    int realtime_priority{ 60 };
-    int desired_cpu_core{ -1 };
   };
 
   explicit EthercatBus(const Parameters& params);
@@ -75,8 +61,11 @@ public:
    * @note in case UpdateMode::Synchronous was used this method does nothing
    */
   void update();
-  void spin();
 
+  /**
+   * @brief attach_device - let this bus instance handle the specific ethercat device.
+   * Internally it will configure the device with the specific id
+   */
   void attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device);
   /**
    * @brief get_parameters - obtain the configuration objects
@@ -87,9 +76,18 @@ public:
   /**
    * @brief Check if the bus manages a specific device
    * @param device_id - the id (bus address) of the device you are looking for
-   * @return true in case the bus manages that specifc device
+   * @return true in case the bus manages that specific device
+   * @note this checks if the device is _managed_ by this bus instance object (has been added via attach device)
    */
   bool has_device(const DeviceId device_id) const;
+
+  /**
+   * @brief Check if the specific device is found on the bus
+   * @param device_id - the id (bus address) of the device you are looking for
+   * @return true in case the specific device was found on the bus
+   * @note this checks if the device is on the physical bus. Not if it is managed by this bus instance object
+   */
+  bool has_device_on_bus(const DeviceId device_id) const;
 
   // Untyped functions for reading writing SDOs
   // Blocking

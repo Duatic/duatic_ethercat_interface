@@ -14,61 +14,89 @@ class EthercatBus;
 class EthercatDeviceBase
 {
 public:
-  using RawRxPdo = std::span<const uint8_t>;  // Const because the backend does not need to write to what is sent
-  using RawTxPdo = std::span<uint8_t>;        // non const because the backend needs to write to that data range
+  struct Hooks
+  {
+    using FunctionPtr = std::function<void(void)>;
+    FunctionPtr on_configure;
+    FunctionPtr on_startup;
+    FunctionPtr on_pdo_configured;
+    FunctionPtr on_pre_activate;
+    FunctionPtr on_post_activate;
+    FunctionPtr on_pre_shutdown;
+    FunctionPtr on_post_shutdown;
+  };
+  /**
+   * @brief Helper enum to track if the device has already been configured by the bus
+   * and if not handle it accordingly
+   */
+  enum class InstanceState
+  {
+    Created,
+    BusConfigured,
+    PdoConfigured
+  };
 
-  // Wrapper around the access to the actual pdo data
-  // Provides the necessary mutex to safety access the corresponding data
-  struct RxPdoWrapper
-  {
-    RawRxPdo raw;
-    mutable std::mutex access_lock;
-  };
-  struct TxPdoWrapper
-  {
-    RawTxPdo raw;
-    mutable std::mutex access_lock;
-  };
-  EthercatDeviceBase();
+  explicit EthercatDeviceBase(const Hooks& hooks = {});
   virtual ~EthercatDeviceBase() = default;
+  /**
+   * @brief configure - called by the bus to configure this device instace
+   */
   void configure(EthercatBus* bus, DeviceInfo device_info);
 
   /**
    * @brief on_configure - called when the device has been configured on a specific bus
    */
-  virtual void on_configure()
+  void on_configure()
   {
+    if (hooks_.on_configure) {
+      hooks_.on_configure();
+    }
   }
   /**
    * @brief on_pre_startup - before the bus pdo mapping / dc will be configured
    */
-  virtual void on_startup()
+  void on_startup()
   {
+    if (hooks_.on_startup) {
+      hooks_.on_startup();
+    }
   }
   /**
    * @brief on_pre_activate - before all devices are put into operational state but after bus pdo mapping has been
    * configured
    */
-  virtual void on_pre_activate()
+  void on_pre_activate()
   {
+    if (hooks_.on_pre_activate) {
+      hooks_.on_pre_activate();
+    }
   }
   /**
    * @brief on_pre_activate - after all devices have been put into operational
    */
-  virtual void on_post_activate()
+  void on_post_activate()
   {
+    if (hooks_.on_post_activate) {
+      hooks_.on_post_activate();
+    }
   }
   /**
    * @brief on_pre_shutdown - before bus will be shutdown
    */
-  virtual void on_pre_shutdown()
+  void on_pre_shutdown()
   {
+    if (hooks_.on_pre_shutdown) {
+      hooks_.on_pre_shutdown();
+    }
   }
   /**
    * @brief on_post_shutdown - after bus will be shutdown
    */
-  virtual void on_post_shutdown()
+  void on_post_shutdown()
   {
+    if (hooks_.on_post_shutdown) {
+      hooks_.on_post_shutdown();
+    }
   }
   /**
    * @brief get_device_id - get the id of this specific device on the bus
@@ -96,10 +124,14 @@ public:
   /**
    * @brief on_pdo_configured - callback which gets called as soon as the pdos has been setup and configured inn the
    * backend
-   * @note This is already implemented in the EthercatDevice and GenericEthercatDevice classes. There is no need to use
-   * override this yourself
    */
-  virtual void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) = 0;
+  virtual void on_pdo_configured([[maybe_unused]] std::size_t configured_rx_pdo_size,
+                                 [[maybe_unused]] std::size_t configured_tx_pdo_size)
+  {
+    if (hooks_.on_pdo_configured) {
+      hooks_.on_pdo_configured();
+    }
+  }
 
   virtual void update_write() = 0;
   virtual void update_read() = 0;
@@ -119,7 +151,10 @@ public:
 protected:
   // Internal pointer to the actual bus
   EthercatBus* bus_{ nullptr };
+
+private:
   DeviceInfo device_info_{};
+  Hooks hooks_{};
 };
 
 /**
@@ -132,7 +167,7 @@ public:
   using GenericRXPDO = std::vector<uint8_t>;
   using GenericTXPDO = std::vector<uint8_t>;
 
-  GenericEthercatDevice()
+  explicit GenericEthercatDevice(const Hooks& hooks = {}) : EthercatDeviceBase(hooks)
   {
   }
   void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) override
@@ -142,6 +177,8 @@ public:
     tx_pdo_.resize(configured_tx_pdo_size, 0);
 
     pdo_initialized = true;
+
+    EthercatDeviceBase::on_pdo_configured(configured_rx_pdo_size, configured_tx_pdo_size);
   }
 
   std::span<const uint8_t> get_generic_rx_pdo() const
@@ -189,7 +226,7 @@ public:
   static_assert(std::is_trivially_copyable_v<RXPDO>);
   static_assert(std::is_trivially_copyable_v<TXPDO>);
 
-  EthercatDevice()
+  explicit EthercatDevice(const Hooks& hooks = {}) : GenericEthercatDevice(hooks)
   {
   }
 
@@ -230,8 +267,6 @@ public:
     std::memcpy(&temp, generic.data(), sizeof(TXPDO));
     return temp;
   }
-
-private:
 };
 
 }  // namespace duatic::ethercat_interface

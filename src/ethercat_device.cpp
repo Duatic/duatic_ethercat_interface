@@ -3,7 +3,7 @@
 
 namespace duatic::ethercat_interface
 {
-EthercatDeviceBase::EthercatDeviceBase()
+EthercatDeviceBase::EthercatDeviceBase(const Hooks& hooks) : hooks_(hooks)
 {
 }
 void EthercatDeviceBase::configure(EthercatBus* bus, DeviceInfo device_info)

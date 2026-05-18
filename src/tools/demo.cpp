@@ -1,5 +1,6 @@
 #include "duatic_ethercat_interface/ethercat_bus.hpp"
 #include "duatic_ethercat_interface/ethercat_device.hpp"
+#include "duatic_ethercat_interface/executor.hpp"
 
 using namespace duatic::ethercat_interface;
 
@@ -47,20 +48,23 @@ DeviceId device_id = 1;
 
 int main(void)
 {
-  EthercatBus bus(EthercatBus::Parameters{});
-  bus.initialize();
+  // This should happen in the same thread
+  auto bus = std::make_shared<EthercatBus>(EthercatBus::Parameters{});
+  bus->initialize();
 
-  bus.attach_device(device_id, drive.get_device());
+  bus->attach_device(device_id, drive.get_device());
 
-  bus.startup();
-  bus.activate();
+  bus->startup();
+  bus->activate();
 
-  // Automatic setup
-  bus.spin();
+  // Executor pattern as we know it from ros (2nd thread)
+  SingleThreadedExecutor executor;
+  executor.add_bus(bus);
+  executor.spin();
 
   // OR
   while (true) {
-    bus.update();
+    bus->update();
   }
 }
 

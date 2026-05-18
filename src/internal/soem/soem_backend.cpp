@@ -7,7 +7,7 @@
 
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/precision_update_rate.hpp"
-#include "duatic_ethercat_interface/realtime_utils.hpp"
+
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 
 #include "duatic_ethercat_interface/internal/backend_impl.hpp"
@@ -69,7 +69,7 @@ inline std::ostream& operator<<(std::ostream& os, BusState state)
 struct EthercatBus::BackendImpl
 {
   explicit BackendImpl(const Parameters& params)
-    : params_(params), update_rate_(params_.update_rate), logger_(logging::get_logger_with_default_sink("SOEM-Backend"))
+    : params_(params), logger_(logging::get_logger_with_default_sink("SOEM-Backend"))
   {
   }
   ~BackendImpl()
@@ -553,16 +553,6 @@ struct EthercatBus::BackendImpl
     return result;
   }
 
-  void spin()
-  {
-    update_thread_ = std::jthread([&]() {
-      this->update();
-      if (!this->update_rate_.step()) {
-        logging::warning() << "Could not keep update rate: " << this->update_rate_.accumulated_delay_ns() << std::endl;
-      }
-    });
-  }
-
 private:
   // Parameterization
   const std::string interface_;
@@ -580,8 +570,6 @@ private:
   // Everything update thread related
   std::mutex sdo_update_mutex_;
   std::mutex pdo_update_mutex_;
-  std::jthread update_thread_;
-  PrecisionUpdateRate update_rate_;
 
   // Synchronization of sdo read/writes into update thread
   std::queue<SDOTransfer> sdo_transfer_queue_;
@@ -751,11 +739,6 @@ void EthercatBus::write_rx_pdo(const DeviceId device_id, const std::vector<uint8
 std::vector<uint8_t> EthercatBus::read_tx_pdo(const DeviceId device_id) const
 {
   return impl_->read_tx_pdo(device_id);
-}
-
-void EthercatBus::spin()
-{
-  impl_->spin();
 }
 
 }  // namespace duatic::ethercat_interface
