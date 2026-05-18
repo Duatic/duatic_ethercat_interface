@@ -19,6 +19,7 @@ endforeach()
 add_library(duatic_ethercat_interface
   src/internal/soem/soem_backend.cpp
   src/ethercat_device.cpp
+  src/tools/demo.cpp
 )
 add_library(duatic_ethercat_interface::duatic_ethercat_interface ALIAS duatic_ethercat_interface)
 target_compile_features(duatic_ethercat_interface PUBLIC c_std_99 cxx_std_20)  # Require C99 and C++20
@@ -35,6 +36,9 @@ target_compile_options(duatic_ethercat_interface PRIVATE
   -Wpedantic
   -Wshadow
   -Wnon-virtual-dtor
+  -Woverloaded-virtual
+  -Wimplicit-fallthrough
+  -Wduplicated-cond
   -Wconversion
   -Wundef
   -Wformat=2
@@ -79,7 +83,14 @@ install(
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_precision_update_rate
+    test/test_precision_update_rate.cpp
+  )
 
+  target_link_libraries(test_precision_update_rate
+    duatic_ethercat_interface
+  )
 endif()
 
 ament_export_include_directories(

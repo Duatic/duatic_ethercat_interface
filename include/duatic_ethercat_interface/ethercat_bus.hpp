@@ -105,16 +105,15 @@ public:
   /**
    * @brief read_rx_pdo - obtain raw pdo data of the rx pdo (rx -> direction the device receives)
    */
-  std::vector<uint8_t> read_rx_pdo( const DeviceId device_id) const;
+  std::vector<uint8_t> read_rx_pdo(const DeviceId device_id) const;
   /**
    * @brief write_rx_pdo - write raw data of the rx pdo (rx -> direction the device receives)
    */
-  void write_rx_pdo( const DeviceId device_id,const std::vector<uint8_t>& data);
+  void write_rx_pdo(const DeviceId device_id, const std::vector<uint8_t>& data);
   /**
    * @brief read_tx_pdo - read raw data of the tx pdo (tx -> direction the device transmits)
    */
-  std::vector<uint8_t> read_tx_pdo( const DeviceId device_id) const;
-
+  std::vector<uint8_t> read_tx_pdo(const DeviceId device_id) const;
 
   /**
    * @brief list_interface - provide a list with all supported interface names
@@ -126,8 +125,6 @@ private:
   // Pimpl pattern which hides the actual backend implementation
   class BackendImpl;
   std::unique_ptr<BackendImpl> impl_;
-
-    
 };
 
 }  // namespace duatic::ethercat_interface

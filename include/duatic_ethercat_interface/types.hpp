@@ -4,6 +4,7 @@
 #include <functional>
 #include <ostream>
 #include <iomanip>
+#include <string>
 
 namespace duatic::ethercat_interface
 {

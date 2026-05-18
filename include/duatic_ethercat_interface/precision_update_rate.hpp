@@ -12,14 +12,32 @@ namespace precision_timing
 constexpr int64_t billion = 1000000000;
 constexpr int64_t sleep_early_stop_ns = 50000;
 
+/**
+ * @brief Compares two timespec structures to determine if the first is earlier than the second.
+ * @param ts1 The first timespec to compare.
+ * @param ts2 The second timespec to compare.
+ * @return true if ts1 represents an earlier time than ts2, false otherwise.
+ */
 inline bool timespec_smaller_than(const timespec& ts1, const timespec& ts2)
 {
   return (ts1.tv_sec < ts2.tv_sec || (ts1.tv_sec == ts2.tv_sec && ts1.tv_nsec < ts2.tv_nsec));
 }
+/**
+ * @brief Calculates the difference between two timespec structures in nanoseconds.
+ * @param a The timespec to subtract from.
+ * @param b The timespec to subtract.
+ * @return The difference (a - b) in nanoseconds.
+ */
 inline int64_t timespec_diff_ns(const timespec& a, const timespec& b)
 {
   return (int64_t)(a.tv_sec - b.tv_sec) * billion + (a.tv_nsec - b.tv_nsec);
 }
+/**
+ * @brief Adds a specified number of nanoseconds to a timespec structure.
+ * @param t The base timespec.
+ * @param ns The number of nanoseconds to add (can be negative).
+ * @return A new timespec representing the adjusted time.
+ */
 inline struct timespec timespec_add_ns(timespec t, const int64_t ns)
 {
   t.tv_sec += ns / billion;
@@ -35,6 +53,10 @@ inline struct timespec timespec_add_ns(timespec t, const int64_t ns)
   return t;
 }
 
+/**
+ * @brief Gets the current monotonic time.
+ * @return A timespec structure representing the current monotonic clock time.
+ */
 inline struct timespec now_monotonic()
 {
   struct timespec t;
@@ -42,6 +64,14 @@ inline struct timespec now_monotonic()
   return t;
 }
 
+/**
+ * @brief Performs a high-precision sleep until the specified absolute time.
+ *
+ * Uses clock_nanosleep to sleep until shortly before the target time, then
+ * busy-waits for the remaining duration to achieve nanosecond precision.
+ *
+ * @param ts The absolute target time (monotonic clock) to sleep until.
+ */
 inline void high_precision_sleep(timespec ts)
 {
   timespec early = timespec_add_ns(ts, -sleep_early_stop_ns);
@@ -56,24 +86,56 @@ inline void high_precision_sleep(timespec ts)
 
 }  // namespace precision_timing
 
+/**
+ * @brief Manages periodic execution at a fixed update rate with high precision timing.
+ *
+ * This class maintains a fixed-rate periodic timer that can detect and track timing
+ * overruns (missed deadlines). It uses hybrid sleeping (clock_nanosleep + busy-wait)
+ * to achieve high precision timing suitable for real-time control loops.
+ */
 class PrecisionUpdateRate
 {
 public:
+  /**
+   * @brief Constructs a PrecisionUpdateRate object with the specified time step.
+   * @param time_step The desired period between successive steps.
+   */
   PrecisionUpdateRate(std::chrono::nanoseconds time_step) : time_step_ns_(time_step.count())
   {
     reset();
   }
 
+  /**
+   * @brief Resets the timer to start from the current time.
+   *
+   * Sets the next deadline to the current monotonic time. Useful for initialization
+   * or resynchronization after a pause.
+   */
   void reset()
   {
     sleep_end_ = precision_timing::now_monotonic();
+
+    last_delay_ns_ = 0;
+    accumulated_delay_ns_ = 0;
+    overrun_count_ = 0;
   }
+  /**
+   * @brief Advances to the next time step and sleeps until the deadline.
+   *
+   * Advances the internal deadline by one time_step period and sleeps until that
+   * deadline is reached. If the current time has already passed the deadline
+   * (overrun), it tracks the delay statistics and adjusts the deadline to the
+   * current time plus one time step.
+   *
+   * @return true if a timing overrun occurred (deadline was missed), false otherwise.
+   */
   bool step()
   {
     using namespace precision_timing;
 
     // advance fixed periodic deadline
     sleep_end_ = timespec_add_ns(sleep_end_, time_step_ns_);
+    last_delay_ns_ = 0;
 
     timespec now = now_monotonic();
 
@@ -82,7 +144,8 @@ public:
     if (timespec_smaller_than(sleep_end_, now)) {
       has_overrun = true;
       overrun_count_ += 1;
-      accumulated_delay_ns_ += timespec_diff_ns(now, sleep_end_);
+      last_delay_ns_ = timespec_diff_ns(now, sleep_end_);
+      accumulated_delay_ns_ += last_delay_ns_;
       sleep_end_ = now;
 
       sleep_end_ = timespec_add_ns(sleep_end_, time_step_ns_);
@@ -93,11 +156,29 @@ public:
     return has_overrun;
   }
 
-  int64_t accumulated_delay_ns() const
+  /**
+   * @brief Gets the total accumulated delay from all timing overruns.
+   * @return The total accumulated delay as a chrono::nanoseconds duration.
+   */
+  std::chrono::nanoseconds accumulated_delay_ns() const
   {
-    return accumulated_delay_ns_;
+    return std::chrono::nanoseconds(accumulated_delay_ns_);
   }
-  int64_t overrun_count() const
+
+  /**
+   * @brief Gets the delay from the most recent timing overrun.
+   * @return The last delay as a chrono::nanoseconds duration (0 if no overrun occurred in last step).
+   */
+  std::chrono::nanoseconds last_delay_ns() const
+  {
+    return std::chrono::nanoseconds(last_delay_ns_);
+  }
+
+  /**
+   * @brief Gets the number of timing overruns that have occurred.
+   * @return The count of missed deadlines since construction or last reset.
+   */
+  uint64_t overrun_count() const
   {
     return overrun_count_;
   }
@@ -105,6 +186,7 @@ public:
 private:
   int64_t time_step_ns_;
   int64_t accumulated_delay_ns_{ 0 };
+  int64_t last_delay_ns_{ 0 };
   uint64_t overrun_count_{ 0 };
   timespec sleep_end_;
 };

@@ -57,7 +57,7 @@ bool set_realtime_priority(pthread_t thread, int priority = 60, int cpu_core = -
     return false;
   }
 
-  CPU_SET(cpu_core, &cpuset);
+  CPU_SET(static_cast<std::size_t>(cpu_core), &cpuset);
   if (auto ec = pthread_setaffinity_np(thread, sizeof(cpuset), &cpuset); ec != 0) {
     logging::error() << "Failed to bind thread: " << thread << " to cpu core: " << cpu_core << ". ec: " << ec;
     return false;
