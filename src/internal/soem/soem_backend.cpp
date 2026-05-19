@@ -505,6 +505,7 @@ struct EthercatBus::BackendImpl
       }
 
       if (all_in_operational) {
+        // TODO add timeout ?
         update_bus_state(BusState::Operational);
       }
     }

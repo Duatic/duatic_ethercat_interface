@@ -13,7 +13,12 @@
 namespace duatic::ethercat_interface
 {
 
-// NOTE all non realtime critical functions can throw
+/**
+ * @brief EthercatBus - Implementation of an EthercatMaster around any existing SDK
+ * @note all non-rt critical function can throw
+ * @note All functions that are marked as "not thread safe" may not be called from multiple different threads at the
+ * same time
+ */
 class EthercatBus
 {
 public:
@@ -62,19 +67,19 @@ public:
   /**
    * @brief activate - next step after startup
    * This brings all devices into SAFE_OP mode
-   * @note on UpdateMode::Synchronous configuration the bus will automatically bring all devices into Operational mode
-   * and peform the cyclic update
-   * @note on UpdateMode::SelfManaged the user must call update() himself with the desired update rate
+   * @note not thread safe
    */
   void activate();
   /**
    * @brief shutdown - perform a safe shutdown of the bus
+   * @note not thread safe
    */
   void shutdown();
 
   /**
    * @brief update - perform a single bus update step
    * @note in case UpdateMode::Synchronous was used this method does nothing
+   * @note thread safe
    */
   void update();
 
@@ -152,20 +157,24 @@ public:
                          const SDOSubIndex sub_index, const SDOWriteCallback& cb);
   /**
    * @brief read_rx_pdo - obtain raw pdo data of the rx pdo (rx -> direction the device receives)
+   * @note thread safe
    */
   std::vector<uint8_t> read_rx_pdo(const DeviceId device_id) const;
   /**
    * @brief write_rx_pdo - write raw data of the rx pdo (rx -> direction the device receives)
+   * @note thread safe
    */
   void write_rx_pdo(const DeviceId device_id, const std::vector<uint8_t>& data);
   /**
    * @brief read_tx_pdo - read raw data of the tx pdo (tx -> direction the device transmits)
+   * @note thread safe
    */
   std::vector<uint8_t> read_tx_pdo(const DeviceId device_id) const;
 
   /**
    * @brief list_interface - provide a list with all supported interface names
    * @return list of strings of the interface names
+   * @note not thread safe
    */
   static std::vector<std::string> list_interfaces();
 

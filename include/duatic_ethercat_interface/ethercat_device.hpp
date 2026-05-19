@@ -16,6 +16,7 @@ class EthercatBus;
 class EthercatDeviceBase
 {
 public:
+  // List of callback functions a user can register
   struct Hooks
   {
     using FunctionPtr = std::function<void(void)>;
