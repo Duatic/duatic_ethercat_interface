@@ -3,6 +3,8 @@
 #include <cstring>
 #include <cassert>
 #include <mutex>
+#include <vector>
+#include <string>
 
 #include "duatic_ethercat_interface/types.hpp"
 #include "duatic_ethercat_interface/exceptions.hpp"
@@ -132,8 +134,13 @@ public:
       hooks_.on_pdo_configured();
     }
   }
-
+  /**
+   * @brief update_write - callback which gets called __before__ pdo data is sent over the line
+   */
   virtual void update_write() = 0;
+  /**
+   * @brief update_read - callback which gets called __after__ pdo data has been read from the line
+   */
   virtual void update_read() = 0;
 
   // Helper functions for performing sdo read and writes
@@ -181,6 +188,11 @@ public:
     EthercatDeviceBase::on_pdo_configured(configured_rx_pdo_size, configured_tx_pdo_size);
   }
 
+  /**
+   * @brief Access the currently configured RX PDO (rx == data the master sends and the device receives)
+   * @note this function is fully thread safe and does not block the bus.
+   * This access the raw data which needs to be interpreted afterwards
+   */
   std::span<const uint8_t> get_generic_rx_pdo() const
   {
     if (!pdo_initialized) {
@@ -189,6 +201,11 @@ public:
 
     return rx_pdo_;
   }
+  /**
+   * @brief Configure the next RX PDO to be sent to the device (rx == data the master sends and the device receives)
+   * @note this function is fully thread safe and does not block the bus. The data is copied to the bus on the next
+   * update_write call
+   */
   void set_generic_rx_pdo(std::span<const uint8_t> rx)
   {
     if (!pdo_initialized) {
@@ -197,6 +214,11 @@ public:
 
     rx_pdo_.assign(rx.begin(), rx.end());
   }
+  /**
+   * @brief Access the latest received TX PDO (tx == data the device sends the the maste receives)
+   * @note this function is fully thread safe and does not block the bus. The data is copied from the bus at the
+   * update_read call
+   */
   std::span<const uint8_t> get_generic_tx_pdo() const
   {
     if (!pdo_initialized) {
@@ -206,12 +228,15 @@ public:
     return tx_pdo_;
   }
 
-  void update_write() override;
-  void update_read() override;
+  // Actual implementation of the write/read functions
+  // These functions copy the data to the ethercat backend
+  void update_write() final override;
+  void update_read() final override;
 
 private:
   bool pdo_initialized = false;
 
+  // Access should only be done via the get/set_generic_pdo methods
   GenericRXPDO rx_pdo_;
   GenericTXPDO tx_pdo_;
 };
@@ -223,6 +248,7 @@ template <typename RXPDO, typename TXPDO>
 class EthercatDevice final : public GenericEthercatDevice
 {
 public:
+  // Enforce POD datatypes as otherwise the generic -> non generic copy assumptions do not hold
   static_assert(std::is_trivially_copyable_v<RXPDO>);
   static_assert(std::is_trivially_copyable_v<TXPDO>);
 
@@ -232,6 +258,7 @@ public:
 
   void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) override final
   {
+    // Important to call base class function as the actual allocation happens here
     GenericEthercatDevice::on_pdo_configured(configured_rx_pdo_size, configured_tx_pdo_size);
     // Only check if sizes are matching
     if (configured_rx_pdo_size != sizeof(RXPDO)) {
@@ -242,6 +269,10 @@ public:
     }
   }
 
+  /**
+   * @brief Access the currently configured RX PDO (rx == data the master sends and the device receives)
+   * @note this function is fully thread safe and does not block the bus.
+   */
   RXPDO get_rx_pdo() const
   {
     // TODO get rid of copy
@@ -251,6 +282,11 @@ public:
     std::memcpy(&temp, generic.data(), sizeof(RXPDO));
     return temp;
   }
+  /**
+   * @brief Configure the next RX PDO to be sent to the device (rx == data the master sends and the device receives)
+   * @note this function is fully thread safe and does not block the bus. The data is copied to the bus on the next
+   * update_write call
+   */
   void set_rx_pdo(const RXPDO& rx)
   {
     // TODO get rid of copy
@@ -259,6 +295,11 @@ public:
 
     set_generic_rx_pdo(temp);
   }
+  /**
+   * @brief Access the latest received TX PDO (tx == data the device sends the the maste receives)
+   * @note this function is fully thread safe and does not block the bus. The data is copied from the bus at the
+   * update_read call
+   */
   TXPDO get_tx_pdo() const
   {
     // TODO get rid of copy

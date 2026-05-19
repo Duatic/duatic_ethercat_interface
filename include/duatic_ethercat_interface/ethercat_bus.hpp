@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 #include <chrono>
+#include <string>
 
 #include "duatic_ethercat_interface/ethercat_device.hpp"
 #include "duatic_ethercat_interface/types.hpp"
@@ -32,9 +33,24 @@ public:
    */
   int initialize();
 
+  /**
+   * @brief scan - perform a full scan of the configured bus and return a list of all found devices
+   * @note not thread safe
+   */
   std::vector<DeviceInfo> scan();
+  /**
+   * @brief scan - check if a specific device is on the bus and provide the full information about that bus
+   * @throws DeviceNotFound in case device was not found on the bus
+   * @note thread safe
+   */
   DeviceInfo scan(const DeviceId device_id);
-
+  /**
+   * @brief read_od - try to read the full object dictionary from the specified device
+   * @param device_id - bus id of the device to read the od from
+   * @param full_read - if specified yes also all subindices are read
+   * @throws DeviceNotFound in case device was not found on the bus
+   * @note not thread safe
+   */
   ObjectDictionary read_od(const DeviceId device_id, bool full_read = false);
 
   /**
@@ -91,14 +107,48 @@ public:
 
   // Untyped functions for reading writing SDOs
   // Blocking
+  /**
+   * @brief read_sdo_untyped - perfrom a blocking read for the specified sdo into the given buffer
+   * @throws DeviceNotFound if the device is not on the bus
+   * @throws BackendError if the bus is not initialized yet
+   * @note thread safe
+   * @note you can also read from devices which have not been added via "attach_device"
+   */
   SDOReadResult read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
                                  const SDOSubIndex sub_index);
-  bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                         const SDOSubIndex sub_index);
+  /**
+   * @brief write_sdo_untyped - pefrom a blocking write to the specified sdo from the given buffer
+   * @throws DeviceNotFound if the device is not on the bus
+   * @throws BackendError if the bus is not initialized yet
+   * @note thread safe
+   * @note you can also write to devices which have not been added via "attach_device"
+   */
+  SDOWriteResult write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
+                                   const SDOSubIndex sub_index);
   // Non-blocking
-  bool read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
+  /**
+   * @brief read_sdo_untyped - perform a nonblock read to the specified sdo to the given buffer. On finish the callback
+   * will be called
+   * @throws DeviceNotFound if the device is not on the bus
+   * @throws BackendError if the bus is not initialized yet
+   * @note thread safe
+   * @note In case the bus is running the callback will be called from a different thread than the one you used for
+   * calling this function
+   * TODO improve callback threading model
+   */
+  void read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
                         const SDOSubIndex sub_index, const SDOReadCallback& cb);
-  bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
+  /**
+   * @brief write_sdo_untyped - perform a nonblock write to the specified sdo to the given buffer. On finish the
+   * callback will be called
+   * @throws DeviceNotFound if the device is not on the bus
+   * @throws BackendError if the bus is not initialized yet
+   * @note thread safe
+   * @note In case the bus is running the callback will be called from a different thread than the one you used for
+   * calling this function
+   * TODO improve callback threading model
+   */
+  void write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                          const SDOSubIndex sub_index, const SDOWriteCallback& cb);
   /**
    * @brief read_rx_pdo - obtain raw pdo data of the rx pdo (rx -> direction the device receives)

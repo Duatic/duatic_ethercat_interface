@@ -12,10 +12,6 @@ using DeviceId = uint16_t;
 using SDOIndex = uint16_t;
 using SDOSubIndex = uint8_t;
 
-using SDOReadCallback =
-    std::function<void(std::span<const uint8_t>, const DeviceId, const SDOIndex, const SDOSubIndex)>;
-using SDOWriteCallback = std::function<void(const bool, const DeviceId, const SDOIndex, const SDOSubIndex)>;
-
 constexpr std::size_t maximum_visible_string_size = 255;
 
 struct SDOReadResult
@@ -40,6 +36,10 @@ struct SDOWriteResult
     return success;
   }
 };
+
+using SDOReadCallback = std::function<void(std::span<const uint8_t>, const DeviceId, const SDOIndex, const SDOSubIndex,
+                                           const SDOReadResult&)>;
+using SDOWriteCallback = std::function<void(const DeviceId, const SDOIndex, const SDOSubIndex, const SDOWriteResult&)>;
 
 enum class SDOObjectCode : uint8_t
 {

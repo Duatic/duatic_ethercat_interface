@@ -110,7 +110,7 @@ struct EthercatBus::BackendImpl
       throw BackendError("Backend not initialized - cannot perform SDO operations", Backend::SOEM);
     }
     // And only on devices that are actually on the bus
-    if (device_id > get_device_count()) {
+    if (!has_device_on_bus(device_id)) {
       throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
     }
     // Depending on the current bus state we need to handle SDO access differently
@@ -145,6 +145,8 @@ struct EthercatBus::BackendImpl
 
       return result.load();
     } else {
+      // It theory it is possible to call the sdo functions even if the bus is not activated yet from multiple threads
+      std::lock_guard<std::mutex> lock(sdo_update_mutex_);
       // Directly perform the read
       int actual_size = requested_size;
       const int wkc =
@@ -168,15 +170,88 @@ struct EthercatBus::BackendImpl
       return SDOReadResult{ .success = true, .actual_size_read = actual_size, .working_counter = wkc };
     }
   }
-  bool write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                         const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
+  void read_sdo_untyped_async(const SDOReadCallback& cb, std::span<uint8_t> data, const DeviceId device_id,
+                              const SDOIndex index, const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
+  {
+    // NOTE we only report some errors as exceptions as for example working counter too low can happen also in normal
+    // operation In this case simply false is returned
+
+    // Only perform operations on an initialized bus
+    if (get_bus_state() == BusState::PreInit) {
+      throw BackendError("Backend not initialized - cannot perform SDO operations", Backend::SOEM);
+    }
+    // And only on devices that are actually on the bus
+    if (!has_device_on_bus(device_id)) {
+      throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
+    }
+    // Depending on the current bus state we need to handle SDO access differently
+    // When the bus is up and running we should enqueue and SDO access into the main update thread
+    // otherwise we can simply directly perform the operation
+    const int requested_size = static_cast<int>(data.size());
+
+    if (get_bus_state() == BusState::Operational) {
+      SDOTransfer transfer{ .device_id = device_id,
+                            .index = index,
+                            .sub_index = sub_index,
+                            .direction = SDOTransfer::Direction::Read,
+                            .data = data.data(),
+                            .data_size = requested_size,
+                            .timeout = timeout,
+                            .transfer_finished_cb = [&](const bool success, const int actual_size, const int wkc) {
+                              SDOReadResult result{ .success = success,
+                                                    .actual_size_read = actual_size,
+                                                    .working_counter = wkc };
+                              // Just call the callback
+                              // NOTE this is in a different thread now
+                              cb(data, device_id, index, sub_index, result);
+                            } };
+      {
+        // Lock it and enque the transfer
+        std::lock_guard<std::mutex> lock(sdo_update_mutex_);
+        sdo_transfer_queue_.push(transfer);
+      }  // lock is now released
+
+    } else {
+      // It theory it is possible to call the sdo functions even if the bus is not activated yet from multiple threads
+      std::lock_guard<std::mutex> lock(sdo_update_mutex_);
+      // Directly perform the read
+      int actual_size = requested_size;
+      const int wkc =
+          ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
+      SDOReadResult result{};
+      if (wkc <= 0) {
+        logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
+                                << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
+                                << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
+                                << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+        result = SDOReadResult{ .success = false, .actual_size_read = actual_size, .working_counter = wkc };
+      } else {
+        result = SDOReadResult{ .success = true, .actual_size_read = actual_size, .working_counter = wkc };
+      }
+
+      if (requested_size != actual_size) {
+        logging::error(logger_) << "Device id  " << device_id << ": Size mismatch (expected " << requested_size
+                                << " bytes, read " << actual_size << " bytes) for reading SDO (ID: 0x"
+                                << std::setfill('0') << std::setw(4) << std::hex << index << ", SID 0x"
+                                << std::setfill('0') << std::setw(2) << std::hex << static_cast<uint16_t>(sub_index)
+                                << ")." << std::endl;
+        throw BackendError("SDORead size mismatch", Backend::SOEM, actual_size);
+      }
+      // In case of success just call the callback
+      // NOTE this is in the same thread now
+      cb(data, device_id, index, sub_index, result);
+    }
+  }
+
+  SDOWriteResult write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
+                                   const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
   {
     // Only perform operations on an initialized bus
     if (get_bus_state() == BusState::PreInit) {
       throw BackendError("Backend not initialized - cannot perform SDO operations", Backend::SOEM);
     }
     // And only on devices that are actually on the bus
-    if (device_id > get_device_count()) {
+    if (!has_device_on_bus(device_id)) {
       throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
     }
     // Depending on the current bus state we need to handle SDO access differently
@@ -208,6 +283,8 @@ struct EthercatBus::BackendImpl
 
       return result.load();
     } else {
+      // It theory it is possible to call the sdo functions even if the bus is not activated yet from multiple threads
+      std::lock_guard<std::mutex> lock(sdo_update_mutex_);
       // Directly perform the write
       const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, static_cast<int>(data.size()),
                                    const_cast<uint8_t*>(data.data()), timeout);
@@ -217,10 +294,63 @@ struct EthercatBus::BackendImpl
                                 << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
                                 << static_cast<uint16_t>(sub_index) << ")." << std::endl;
 
-        return false;
+        return SDOWriteResult{ .success = false, .working_counter = wkc };
       }
+      return SDOWriteResult{ .success = true, .working_counter = wkc };
     }
-    return true;
+  }
+
+  void write_sdo_untyped_async(const SDOWriteCallback& cb, std::span<const uint8_t> data, const DeviceId device_id,
+                               const SDOIndex index, const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
+  {
+    // Only perform operations on an initialized bus
+    if (get_bus_state() == BusState::PreInit) {
+      throw BackendError("Backend not initialized - cannot perform SDO operations", Backend::SOEM);
+    }
+    // And only on devices that are actually on the bus
+    if (!has_device_on_bus(device_id)) {
+      throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
+    }
+    // Depending on the current bus state we need to handle SDO access differently
+    // When the bus is up and running we should enqueue and SDO access into the main update thread
+    // otherwise we can simply directly perform the operation
+    if (get_bus_state() == BusState::Operational) {
+      SDOTransfer transfer{ .device_id = device_id,
+                            .index = index,
+                            .sub_index = sub_index,
+                            .direction = SDOTransfer::Direction::Read,
+                            .data = const_cast<uint8_t*>(data.data()),  // TODO introduce write/read transfers?
+                            .data_size = static_cast<int>(data.size()),
+                            .timeout = timeout,
+                            .transfer_finished_cb = [&](const bool success, [[maybe_unused]] const int actual_size,
+                                                        const int wkc) {
+                              SDOWriteResult result{ .success = success, .working_counter = wkc };
+                              cb(device_id, index, sub_index, result);
+                            } };
+      {
+        // Lock it and enque the transfer
+        std::lock_guard<std::mutex> lock(sdo_update_mutex_);
+        sdo_transfer_queue_.push(transfer);
+      }  // lock is now released
+
+    } else {
+      // It theory it is possible to call the sdo functions even if the bus is not activated yet from multiple threads
+      std::lock_guard<std::mutex> lock(sdo_update_mutex_);
+      // Directly perform the write
+      const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, static_cast<int>(data.size()),
+                                   const_cast<uint8_t*>(data.data()), timeout);
+      SDOWriteResult result{};
+      if (wkc <= 0) {
+        logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
+                                << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
+                                << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
+                                << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+        result = SDOWriteResult{ .success = false, .working_counter = wkc };
+      } else {
+        result = SDOWriteResult{ .success = true, .working_counter = wkc };
+      }
+      cb(device_id, index, sub_index, result);
+    }
   }
 
   int get_device_count() const
@@ -410,7 +540,7 @@ struct EthercatBus::BackendImpl
 
     // 1. Read Object Dictionary list (top level objects)
     if (!ecx_readODlist(&context_.context, device_id, &od_list)) {
-      throw BackendError("Failed to read OD list from device", Backend::SOEM);
+      throw DeviceNotFound("Failed to read OD list from device", Backend::SOEM);
     }
 
     // 2. Iterate over objects
@@ -491,7 +621,7 @@ struct EthercatBus::BackendImpl
       throw BackendError("Need to initialize bus first for a scan", Backend::SOEM);
     }
     if (!has_device_on_bus(device_id)) {
-      throw BackendError("Cannot scan for device - it is not on the bus", Backend::SOEM);
+      throw DeviceNotFound("Cannot scan for device - it is not on the bus", Backend::SOEM);
     }
     return DeviceInfo{ .id = static_cast<DeviceId>(device_id),
                        .name = std::string(context_.ecatSlavelist_[device_id].name),
@@ -674,10 +804,20 @@ SDOReadResult EthercatBus::read_sdo_untyped(std::span<uint8_t> data, const Devic
 {
   return impl_->read_sdo_untyped(data, device_id, index, sub_index);
 }
-bool EthercatBus::write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                                    const SDOSubIndex sub_index)
+void EthercatBus::read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
+                                   const SDOSubIndex sub_index, const SDOReadCallback& cb)
+{
+  impl_->read_sdo_untyped_async(cb, data, device_id, index, sub_index);
+}
+SDOWriteResult EthercatBus::write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id,
+                                              const SDOIndex index, const SDOSubIndex sub_index)
 {
   return impl_->write_sdo_untyped(data, device_id, index, sub_index);
+}
+void EthercatBus::write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
+                                    const SDOSubIndex sub_index, const SDOWriteCallback& cb)
+{
+  impl_->write_sdo_untyped_async(cb, data, device_id, index, sub_index);
 }
 
 ObjectDictionary EthercatBus::read_od(const DeviceId device_id, bool full_read)
