@@ -1,5 +1,9 @@
 #include "duatic_ethercat_interface/ethercat_interface.hpp"
 
+/**
+ * This is a minimal example which demonstrates how to use the api
+ */
+
 using namespace duatic::ethercat_interface;
 
 struct RX
@@ -50,6 +54,11 @@ int main(void)
   auto bus = std::make_shared<EthercatBus>(EthercatBus::Parameters{});
   bus->initialize();
 
+  // API without device usage:
+  std::array<uint8_t, 8> data;
+  bus->read_sdo_untyped(data, 1, 1, 0);
+
+  // Usage with device
   bus->attach_device(device_id, drive.get_device());
 
   bus->startup();

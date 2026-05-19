@@ -155,6 +155,13 @@ public:
    */
   void write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                          const SDOSubIndex sub_index, const SDOWriteCallback& cb);
+
+  template <typename T>
+  std::optional<T> sdo_read(const DeviceId device_id, const SDOIndex index, const SDOSubIndex sub_index = 0);
+
+  template <typename T>
+  bool sdo_write(const DeviceId device_id, const T value, const SDOIndex index, const SDOSubIndex sub_index = 0);
+
   /**
    * @brief read_rx_pdo - obtain raw pdo data of the rx pdo (rx -> direction the device receives)
    * @note thread safe
@@ -183,5 +190,13 @@ private:
   class BackendImpl;
   std::unique_ptr<BackendImpl> impl_;
 };
+
+// Explicit specialization
+template <>
+std::optional<std::string> EthercatBus::sdo_read<std::string>(DeviceId device_id, SDOIndex index,
+                                                              SDOSubIndex sub_index);
+template <>
+bool EthercatBus::sdo_write<std::string>(DeviceId device_id, const std::string data, SDOIndex index,
+                                         SDOSubIndex sub_index);
 
 }  // namespace duatic::ethercat_interface

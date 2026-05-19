@@ -882,4 +882,89 @@ std::vector<uint8_t> EthercatBus::read_tx_pdo(const DeviceId device_id) const
   return impl_->read_tx_pdo(device_id);
 }
 
+template <typename T>
+std::optional<T> EthercatBus::sdo_read(const DeviceId device_id, const SDOIndex index, const SDOSubIndex sub_index)
+{
+  static_assert(!std::is_same_v<T, std::string>);
+  // This is the actual data instance we use
+  T data{};
+  // And this is just a safe representation (pointer + size) to it
+  std::span<uint8_t> buffer(reinterpret_cast<uint8_t*>(&data), sizeof(T));
+
+  if (!read_sdo_untyped(buffer, device_id, index, sub_index)) {
+    return std::nullopt;
+  }
+
+  return data;
+}
+
+template <>
+std::optional<std::string> EthercatBus::sdo_read<std::string>(const DeviceId device_id, const SDOIndex index,
+                                                              const SDOSubIndex sub_index)
+{
+  // Create a buffer of the maximum possible string length
+  std::vector<char> data(maximum_visible_string_size, 0);
+  // Create a uin8t_t span reprensentation of it
+  std::span<uint8_t> buffer(reinterpret_cast<uint8_t*>(data.data()), data.size());
+  const auto result = read_sdo_untyped(buffer, device_id, index, sub_index);
+  if (!result) {
+    // Something during the read failed
+    return std::nullopt;
+  }
+
+  // Create an std::string out of it
+  return std::string(data.begin(), data.begin() + result.actual_size_read);
+}
+
+template std::optional<uint8_t> EthercatBus::sdo_read<uint8_t>(DeviceId, SDOIndex, SDOSubIndex);
+template std::optional<int8_t> EthercatBus::sdo_read<int8_t>(DeviceId, SDOIndex, SDOSubIndex);
+template std::optional<uint16_t> EthercatBus::sdo_read<uint16_t>(DeviceId, SDOIndex, SDOSubIndex);
+template std::optional<int16_t> EthercatBus::sdo_read<int16_t>(DeviceId, SDOIndex, SDOSubIndex);
+template std::optional<uint32_t> EthercatBus::sdo_read<uint32_t>(DeviceId, SDOIndex, SDOSubIndex);
+template std::optional<int32_t> EthercatBus::sdo_read<int32_t>(DeviceId, SDOIndex, SDOSubIndex);
+template std::optional<uint64_t> EthercatBus::sdo_read<uint64_t>(DeviceId, SDOIndex, SDOSubIndex);
+template std::optional<int64_t> EthercatBus::sdo_read<int64_t>(DeviceId, SDOIndex, SDOSubIndex);
+template std::optional<float> EthercatBus::sdo_read<float>(DeviceId, SDOIndex, SDOSubIndex);
+template std::optional<double> EthercatBus::sdo_read<double>(DeviceId, SDOIndex, SDOSubIndex);
+
+template <typename T>
+bool EthercatBus::sdo_write(const DeviceId device_id, const T value, const SDOIndex index, const SDOSubIndex sub_index)
+{
+  // Call by value makes this function safer in case the call needs to be queued
+  std::span<const uint8_t> data(reinterpret_cast<const uint8_t*>(&value), sizeof(T));
+  const auto result = write_sdo_untyped(data, device_id, index, sub_index);
+  if (!result) {
+    // Something during the write failed
+    return false;
+  }
+
+  return true;
+}
+
+template <>
+bool EthercatBus::sdo_write<std::string>(const DeviceId device_id, const std::string value, const SDOIndex index,
+                                         const SDOSubIndex sub_index)
+{
+  // Call by value makes this function safer in case the call needs to be queued
+  std::span<const uint8_t> data(reinterpret_cast<const uint8_t*>(value.data()), value.size());
+  const auto result = write_sdo_untyped(data, device_id, index, sub_index);
+  if (!result) {
+    // Something during the write failed
+    return false;
+  }
+
+  return true;
+}
+
+template bool EthercatBus::sdo_write<uint8_t>(DeviceId, const uint8_t, SDOIndex, SDOSubIndex);
+template bool EthercatBus::sdo_write<int8_t>(DeviceId, const int8_t, SDOIndex, SDOSubIndex);
+template bool EthercatBus::sdo_write<uint16_t>(DeviceId, const uint16_t, SDOIndex, SDOSubIndex);
+template bool EthercatBus::sdo_write<int16_t>(DeviceId, const int16_t, SDOIndex, SDOSubIndex);
+template bool EthercatBus::sdo_write<uint32_t>(DeviceId, const uint32_t, SDOIndex, SDOSubIndex);
+template bool EthercatBus::sdo_write<int32_t>(DeviceId, const int32_t, SDOIndex, SDOSubIndex);
+template bool EthercatBus::sdo_write<uint64_t>(DeviceId, const uint64_t, SDOIndex, SDOSubIndex);
+template bool EthercatBus::sdo_write<int64_t>(DeviceId, const int64_t, SDOIndex, SDOSubIndex);
+template bool EthercatBus::sdo_write<float>(DeviceId, const float, SDOIndex, SDOSubIndex);
+template bool EthercatBus::sdo_write<double>(DeviceId, const double, SDOIndex, SDOSubIndex);
+
 }  // namespace duatic::ethercat_interface

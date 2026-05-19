@@ -15,34 +15,7 @@ void EthercatDeviceBase::configure(EthercatBus* bus, DeviceInfo device_info)
 template <typename T>
 std::optional<T> EthercatDeviceBase::sdo_read(const SDOIndex index, const SDOSubIndex sub_index)
 {
-  static_assert(!std::is_same_v<T, std::string>);
-  // This is the actual data instance we use
-  T data{};
-  // And this is just a safe representation (pointer + size) to it
-  std::span<uint8_t> buffer(reinterpret_cast<uint8_t*>(&data), sizeof(T));
-
-  if (!bus_->read_sdo_untyped(buffer, get_device_id(), index, sub_index)) {
-    return std::nullopt;
-  }
-
-  return data;
-}
-
-template <typename T>
-std::optional<std::string> EthercatDeviceBase::sdo_read(const SDOIndex index, const SDOSubIndex sub_index)
-{
-  // Create a buffer of the maximum possible string length
-  std::vector<char> data(maximum_visible_string_size, 0);
-  // Create a uin8t_t span reprensentation of it
-  std::span<uint8_t> buffer(reinterpret_cast<uint8_t*>(data.data()), data.size());
-  const auto result = bus_->read_sdo_untyped(buffer, get_device_id(), index, sub_index);
-  if (!result) {
-    // Something during the read failed
-    return std::nullopt;
-  }
-
-  // Create an std::string out of it
-  return std::string(data.begin(), data.begin() + result.actual_size_read);
+  return bus_->sdo_read<T>(get_device_id(), index, sub_index);
 }
 
 template std::optional<uint8_t> EthercatDeviceBase::sdo_read<uint8_t>(SDOIndex, SDOSubIndex);
@@ -59,28 +32,7 @@ template std::optional<double> EthercatDeviceBase::sdo_read<double>(SDOIndex, SD
 template <typename T>
 bool EthercatDeviceBase::sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index)
 {
-  // Call by value makes this function safer in case the call needs to be queued
-  std::span<const uint8_t> data(reinterpret_cast<const uint8_t*>(&value), sizeof(T));
-  const auto result = bus_->write_sdo_untyped(data, get_device_id(), index, sub_index);
-  if (!result) {
-    // Something during the write failed
-    return false;
-  }
-
-  return true;
-}
-
-bool EthercatDeviceBase::sdo_write(const std::string value, const SDOIndex index, const SDOSubIndex sub_index)
-{
-  // Call by value makes this function safer in case the call needs to be queued
-  std::span<const uint8_t> data(reinterpret_cast<const uint8_t*>(value.data()), value.size());
-  const auto result = bus_->write_sdo_untyped(data, get_device_id(), index, sub_index);
-  if (!result) {
-    // Something during the write failed
-    return false;
-  }
-
-  return true;
+  return bus_->sdo_write<T>(get_device_id(), value, index, sub_index);
 }
 
 template bool EthercatDeviceBase::sdo_write<uint8_t>(const uint8_t, SDOIndex, SDOSubIndex);
