@@ -33,11 +33,15 @@ public:
     : params_(params), update_rate_(params.update_rate)
   {
   }
+  ~SingleThreadedExecutor()
+  {
+    stop();
+  }
   /**
    * @brief add_bus - Add a bus object to the list of busses which is handled by this exector
    * @note After calling spin you cannot add additional bus objects anymore
    */
-  void add_bus(std::shared_ptr<EthercatBus>& bus)
+  void add_bus(std::shared_ptr<EthercatBus> bus)
   {
     if (spinning_) {
       throw ExecutorError("Executor already spinning - cannot add additional bus");
@@ -50,6 +54,10 @@ public:
    */
   void spin()
   {
+    if (spinning_) {
+      throw ExecutorError("Executor already spinning");
+    }
+
     spinning_ = true;
     update_thread_ = std::jthread([&](std::stop_token stoken) {
       if (!set_realtime_priority(params_.realtime_priority, params_.desired_cpu_core)) {
@@ -59,7 +67,7 @@ public:
         for (auto& bus : busses_) {
           bus->update();
         }
-        if (!this->update_rate_.step()) {
+        if (this->update_rate_.step()) {
           logging::warning() << "Could not keep update rate: " << this->update_rate_.accumulated_delay_ns()
                              << std::endl;
         }
@@ -75,7 +83,7 @@ public:
    */
   void stop()
   {
-    if (spinning_) {
+    if (spinning_ && update_thread_.joinable()) {
       update_thread_.request_stop();
       update_thread_.join();
     }
