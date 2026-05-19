@@ -6,6 +6,7 @@
 #include <atomic>
 
 #include "duatic_ethercat_interface/exceptions.hpp"
+#include "duatic_ethercat_interface/ethercat_device.hpp"
 #include "duatic_ethercat_interface/precision_update_rate.hpp"
 
 #include "duatic_ethercat_interface/object_dictionary.hpp"

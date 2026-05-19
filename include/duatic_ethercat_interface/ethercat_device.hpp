@@ -9,10 +9,11 @@
 #include "duatic_ethercat_interface/types.hpp"
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/object_dictionary.hpp"
+#include "duatic_ethercat_interface/ethercat_bus.hpp"
 
 namespace duatic::ethercat_interface
 {
-class EthercatBus;
+
 class EthercatDeviceBase
 {
 public:
@@ -146,10 +147,16 @@ public:
 
   // Helper functions for performing sdo read and writes
   template <typename T>
-  std::optional<T> sdo_read(const SDOIndex index, const SDOSubIndex sub_index = 0);
+  std::optional<T> sdo_read(const SDOIndex index, const SDOSubIndex sub_index = 0)
+  {
+    return bus_->sdo_read<T>(get_device_id(), index, sub_index);
+  }
 
   template <typename T>
-  bool sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index = 0);
+  bool sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index = 0)
+  {
+    return bus_->sdo_write<T>(get_device_id(), value, index, sub_index);
+  }
 
   ObjectDictionary read_od(bool full_read = false) const;
 

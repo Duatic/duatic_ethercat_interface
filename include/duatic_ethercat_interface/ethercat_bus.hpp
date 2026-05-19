@@ -7,7 +7,7 @@
 #include <chrono>
 #include <string>
 
-#include "duatic_ethercat_interface/ethercat_device.hpp"
+#include "duatic_ethercat_interface/object_dictionary.hpp"
 #include "duatic_ethercat_interface/types.hpp"
 
 namespace duatic::ethercat_interface
@@ -19,6 +19,7 @@ namespace duatic::ethercat_interface
  * @note All functions that are marked as "not thread safe" may not be called from multiple different threads at the
  * same time
  */
+class EthercatDeviceBase;
 class EthercatBus
 {
 public:
