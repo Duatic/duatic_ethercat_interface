@@ -26,6 +26,7 @@
 
 #include <pthread.h>
 #include <sched.h>
+#include <unistd.h>
 
 #include <duatic_message_logger/log.hpp>
 
@@ -48,7 +49,7 @@ namespace duatic::ethercat_interface
  *
  * You will need to allow your current user + your container to set these settings
  */
-bool set_realtime_priority(pthread_t thread, int priority = 60, int cpu_core = -1, int scheduler = SCHED_FIFO)
+inline bool set_realtime_priority(pthread_t thread, int priority = 60, int cpu_core = -1, int scheduler = SCHED_FIFO)
 {
   if (priority < 1 || priority > 99) {
     logging::error() << "Failed to configure scheduler - pass a valid priority between [1,99]";
@@ -93,7 +94,7 @@ bool set_realtime_priority(pthread_t thread, int priority = 60, int cpu_core = -
  * @brief set_realtime_priority - variant which configures the current thread
  * See set_realtime_priority with pthread parameter for the full explaination
  */
-bool set_realtime_priority(int priority = 60, int cpu_core = -1, int scheduler = SCHED_FIFO)
+inline bool set_realtime_priority(int priority = 60, int cpu_core = -1, int scheduler = SCHED_FIFO)
 {
   return set_realtime_priority(pthread_self(), priority, cpu_core, scheduler);
 }

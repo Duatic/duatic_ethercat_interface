@@ -222,7 +222,7 @@ struct EthercatBus::BackendImpl
                             .data = data.data(),
                             .data_size = requested_size,
                             .timeout = timeout,
-                            .transfer_finished_cb = [&](const bool success, const int actual_size, const int wkc) {
+                            .transfer_finished_cb = [=](const bool success, const int actual_size, const int wkc) {
                               SDOReadResult result{ .success = success,
                                                     .actual_size_read = actual_size,
                                                     .working_counter = wkc };
@@ -288,7 +288,7 @@ struct EthercatBus::BackendImpl
       SDOTransfer transfer{ .device_id = device_id,
                             .index = index,
                             .sub_index = sub_index,
-                            .direction = SDOTransfer::Direction::Read,
+                            .direction = SDOTransfer::Direction::Write,
                             .data = const_cast<uint8_t*>(data.data()),  // TODO introduce write/read transfers?
                             .data_size = static_cast<int>(data.size()),
                             .timeout = timeout,
@@ -343,11 +343,11 @@ struct EthercatBus::BackendImpl
       SDOTransfer transfer{ .device_id = device_id,
                             .index = index,
                             .sub_index = sub_index,
-                            .direction = SDOTransfer::Direction::Read,
+                            .direction = SDOTransfer::Direction::Write,
                             .data = const_cast<uint8_t*>(data.data()),  // TODO introduce write/read transfers?
                             .data_size = static_cast<int>(data.size()),
                             .timeout = timeout,
-                            .transfer_finished_cb = [&](const bool success, [[maybe_unused]] const int actual_size,
+                            .transfer_finished_cb = [=](const bool success, [[maybe_unused]] const int actual_size,
                                                         const int wkc) {
                               SDOWriteResult result{ .success = success, .working_counter = wkc };
                               cb(device_id, index, sub_index, result);
@@ -386,11 +386,11 @@ struct EthercatBus::BackendImpl
   void attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device)
   {
     // As we need to perfrom the right PDO mapping we need to make sure that the bus is in the right state
-    if (get_bus_state() != BusState::Initialized && get_bus_state() != BusState::Configured) {
+    if (get_bus_state() != BusState::Initialized) {
       throw BackendError("Cannot attach device to bus - bus it not in the correct state", Backend::SOEM);
     }
     // Check if the device even is on the bus
-    if (has_device_on_bus(device_id)) {
+    if (!has_device_on_bus(device_id)) {
       throw BackendError("Device id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
     }
 
@@ -455,7 +455,7 @@ struct EthercatBus::BackendImpl
     }
     // Now we wait for all slaves to reach it
     for (auto& device : devices_) {
-      if (wait_for_device_target_state(device->get_device_id(), ec_state::EC_STATE_SAFE_OP)) {
+      if (!wait_for_device_target_state(device->get_device_id(), ec_state::EC_STATE_SAFE_OP)) {
         shutdown();
         throw BackendError("Device did not reach 'SAFE_OP' state - aborting activation", Backend::SOEM);
       }
@@ -489,17 +489,20 @@ struct EthercatBus::BackendImpl
       device->on_pre_shutdown();
     }
 
-    if (get_bus_state() == BusState::Configured || get_bus_state() == BusState::Operational) {
+    if (get_bus_state() == BusState::Configured || get_bus_state() == BusState::Activated ||
+        get_bus_state() == BusState::Operational) {
       // Bring all devices into pre-op
       // Note: using device id 0 targets all devices on the bus
       set_device_target_state(0, ec_state::EC_STATE_PRE_OP);
       wait_for_device_target_state(0, ec_state::EC_STATE_PRE_OP);
-      update_bus_state(BusState::Shutdown);
-      return;
-    }
 
-    for (auto& device : devices_) {
-      device->on_post_shutdown();
+      ecx_close(&context_.context);
+      update_bus_state(BusState::Shutdown);
+      for (auto& device : devices_) {
+        device->on_post_shutdown();
+      }
+
+      return;
     }
 
     throw BackendError("Invalid BusState in shutdown - dont know what to do", Backend::SOEM);
@@ -508,7 +511,7 @@ struct EthercatBus::BackendImpl
   bool has_device(const DeviceId device_id) const
   {
     return std::find_if(devices_.begin(), devices_.end(),
-                        [&](const auto& d) { return d->get_device_id() == device_id; }) == devices_.end();
+                        [&](const auto& d) { return d->get_device_id() == device_id; }) != devices_.end();
   }
 
   void update()
@@ -669,8 +672,8 @@ struct EthercatBus::BackendImpl
     const auto size = context_.ecatSlavelist_[device_id].Obytes;
 
     std::vector<uint8_t> result(size, 0);
-    // TODO lock
 
+    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
     std::memcpy(result.data(), context_.ecatSlavelist_[device_id].outputs, size);
 
     return result;
@@ -689,7 +692,8 @@ struct EthercatBus::BackendImpl
     if (data.size() != size) {
       throw BackendError("PDO size mismatch - cannot assign", Backend::SOEM);
     }
-    // TODO LOCK
+
+    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
     std::memcpy(context_.ecatSlavelist_[device_id].outputs, data.data(), size);
   }
 
@@ -704,7 +708,8 @@ struct EthercatBus::BackendImpl
 
     const auto size = context_.ecatSlavelist_[device_id].Ibytes;
     std::vector<uint8_t> result(size, 0);
-    // TODO LOCK
+
+    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
     std::memcpy(result.data(), context_.ecatSlavelist_[device_id].inputs, size);
     return result;
   }
@@ -725,7 +730,7 @@ private:
 
   // Everything update thread related
   std::mutex sdo_update_mutex_;
-  std::mutex pdo_update_mutex_;
+  mutable std::mutex pdo_update_mutex_;
 
   // Synchronization of sdo read/writes into update thread
   std::queue<SDOTransfer> sdo_transfer_queue_;
@@ -788,7 +793,7 @@ private:
    */
   bool has_device_on_bus(const DeviceId id) const
   {
-    return id < get_device_count();
+    return id > 0 && id <= get_device_count();
   }
 };
 
