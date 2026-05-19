@@ -90,6 +90,14 @@ if(BUILD_TESTING)
   target_link_libraries(test_precision_update_rate
     duatic_ethercat_interface
   )
+
+  ament_add_gtest(test_soem_backend_state
+    test/test_soem_backend_state.cpp
+  )
+
+  target_link_libraries(test_soem_backend_state
+    duatic_ethercat_interface
+  )
 endif()
 
 ament_export_include_directories(
