@@ -386,7 +386,7 @@ struct EthercatBus::BackendImpl
   void attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device)
   {
     // As we need to perfrom the right PDO mapping we need to make sure that the bus is in the right state
-    if (get_bus_state() != BusState::Initialized || get_bus_state() != BusState::Configured) {
+    if (get_bus_state() != BusState::Initialized && get_bus_state() != BusState::Configured) {
       throw BackendError("Cannot attach device to bus - bus it not in the correct state", Backend::SOEM);
     }
     // Check if the device even is on the bus

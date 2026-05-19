@@ -70,7 +70,7 @@ public:
   {
     return *sdo_entries_by_index_.at(index);
   }
-  const SDOEntry& at(const std::string name)
+  const SDOEntry& at(const std::string& name)
   {
     return *sdo_entries_by_name_.at(name);
   }

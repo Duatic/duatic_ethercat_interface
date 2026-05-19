@@ -23,9 +23,9 @@
  */
 
 #pragma once
+
 #include <span>
 #include <cstdint>
-
 #include <functional>
 #include <ostream>
 #include <iomanip>
