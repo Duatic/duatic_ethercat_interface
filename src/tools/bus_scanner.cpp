@@ -6,7 +6,7 @@
 
 #include <duatic_ethercat_interface/ethercat_bus.hpp>
 
-using namespace duatic::ethercat_interface;
+using namespace duatic::ethercat_interface;  // NOLINT(build/namespaces)
 
 void handle_list_interfaces()
 {
@@ -45,7 +45,7 @@ void handle_sdo(const std::string& interface)
     const auto od = bus.read_od(info.id, true);
 
     std::cout << info << std::endl;
-    for (const auto& [index, sdo] : od.entries()) {
+    for (const auto& sdo : od.entries()) {
       std::cout << "  [" << std::hex << "0x" << sdo.index << std::dec << "]" << std::endl;
       std::cout << "   name: " << sdo.name << std::endl;
 

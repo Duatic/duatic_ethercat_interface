@@ -131,7 +131,7 @@ public:
    */
   bool step()
   {
-    using namespace precision_timing;
+    using namespace precision_timing;  // NOLINT(build/namespaces)
 
     // advance fixed periodic deadline
     sleep_end_ = timespec_add_ns(sleep_end_, time_step_ns_);

@@ -1,6 +1,4 @@
-#include "duatic_ethercat_interface/ethercat_bus.hpp"
-#include "duatic_ethercat_interface/ethercat_device.hpp"
-#include "duatic_ethercat_interface/executor.hpp"
+#include "duatic_ethercat_interface/ethercat_interface.hpp"
 
 using namespace duatic::ethercat_interface;
 

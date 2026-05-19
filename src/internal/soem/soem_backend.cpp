@@ -116,7 +116,7 @@ struct EthercatBus::BackendImpl
     // Depending on the current bus state we need to handle SDO access differently
     // When the bus is up and running we should enqueue and SDO access into the main update thread
     // otherwise we can simply directly perform the operation
-    const int requested_size = data.size();
+    const int requested_size = static_cast<int>(data.size());
 
     if (get_bus_state() == BusState::Operational) {
       std::atomic<SDOReadResult> result;
@@ -190,7 +190,7 @@ struct EthercatBus::BackendImpl
                             .sub_index = sub_index,
                             .direction = SDOTransfer::Direction::Read,
                             .data = const_cast<uint8_t*>(data.data()),  // TODO introduce write/read transfers?
-                            .data_size = data.size(),
+                            .data_size = static_cast<int>(data.size()),
                             .timeout = timeout,
                             .transfer_finished_cb = [&](const bool success, [[maybe_unused]] const int actual_size,
                                                         const int wkc) {

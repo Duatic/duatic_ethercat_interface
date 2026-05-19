@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 #include <optional>
+#include <string>
 
 #include "duatic_ethercat_interface/backend.hpp"
 
@@ -59,6 +60,12 @@ public:
 };
 
 class DeviceConfigurationError : public std::runtime_error
+{
+public:
+  using std::runtime_error::runtime_error;
+};
+
+class ExecutorError : public std::runtime_error
 {
 public:
   using std::runtime_error::runtime_error;

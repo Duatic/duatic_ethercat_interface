@@ -1,6 +1,9 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <unordered_map>
+
 #include "duatic_ethercat_interface/types.hpp"
 
 namespace duatic::ethercat_interface
@@ -26,31 +29,26 @@ struct SDOEntry
 class ObjectDictionary
 {
 public:
-  explicit ObjectDictionary(const std::vector<SDOEntry> entries)
+  explicit ObjectDictionary(const std::vector<SDOEntry>& entries) : sdo_entries_(entries)
   {
-    for (const auto& e : entries) {
-      sdo_entries_[e.index] = e;
+    for (const auto& e : sdo_entries_) {
+      sdo_entries_by_index_[e.index] = &e;
+      sdo_entries_by_name_[e.name] = &e;
     }
   }
 
   bool has_index(const SDOIndex index) const
   {
-    return sdo_entries_.contains(index);
+    return sdo_entries_by_index_.contains(index);
   }
 
   const SDOEntry& at(const SDOIndex index) const
   {
-    return sdo_entries_.at(index);
+    return *sdo_entries_by_index_.at(index);
   }
   const SDOEntry& at(const std::string name)
   {
-    const auto it = std::find_if(sdo_entries_.begin(), sdo_entries_.end(),
-                                 [name](const auto& elem) { return elem.second.name == name; });
-
-    if (it == sdo_entries_.end()) {
-      throw std::runtime_error("Element not found");
-    }
-    return it->second;
+    return *sdo_entries_by_name_.at(name);
   }
 
   const auto& entries() const
@@ -59,7 +57,9 @@ public:
   }
 
 private:
-  std::unordered_map<SDOIndex, SDOEntry> sdo_entries_;
+  std::vector<SDOEntry> sdo_entries_;
+  std::unordered_map<SDOIndex, const SDOEntry*> sdo_entries_by_index_;
+  std::unordered_map<std::string, const SDOEntry*> sdo_entries_by_name_;
 };
 
 }  // namespace duatic::ethercat_interface
