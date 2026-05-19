@@ -916,6 +916,7 @@ std::optional<std::string> EthercatBus::sdo_read<std::string>(const DeviceId dev
   return std::string(data.begin(), data.begin() + result.actual_size_read);
 }
 
+template std::optional<bool> EthercatBus::sdo_read<bool>(DeviceId, SDOIndex, SDOSubIndex);
 template std::optional<uint8_t> EthercatBus::sdo_read<uint8_t>(DeviceId, SDOIndex, SDOSubIndex);
 template std::optional<int8_t> EthercatBus::sdo_read<int8_t>(DeviceId, SDOIndex, SDOSubIndex);
 template std::optional<uint16_t> EthercatBus::sdo_read<uint16_t>(DeviceId, SDOIndex, SDOSubIndex);
@@ -956,6 +957,7 @@ bool EthercatBus::sdo_write<std::string>(const DeviceId device_id, const std::st
   return true;
 }
 
+template bool EthercatBus::sdo_write<bool>(DeviceId, const bool, SDOIndex, SDOSubIndex);
 template bool EthercatBus::sdo_write<uint8_t>(DeviceId, const uint8_t, SDOIndex, SDOSubIndex);
 template bool EthercatBus::sdo_write<int8_t>(DeviceId, const int8_t, SDOIndex, SDOSubIndex);
 template bool EthercatBus::sdo_write<uint16_t>(DeviceId, const uint16_t, SDOIndex, SDOSubIndex);
