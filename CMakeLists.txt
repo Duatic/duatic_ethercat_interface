@@ -27,8 +27,8 @@ target_include_directories(duatic_ethercat_interface PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
 
-ament_target_dependencies(duatic_ethercat_interface ${PACKAGE_DEPENDENCIES})
-target_link_libraries(duatic_ethercat_interface duatic_message_logger::duatic_message_logger)
+
+target_link_libraries(duatic_ethercat_interface duatic_message_logger::duatic_message_logger soem_vendor::soem_vendor)
 # enable additional warnings
 target_compile_options(duatic_ethercat_interface PRIVATE
   -Wall
