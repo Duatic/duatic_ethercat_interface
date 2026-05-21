@@ -268,6 +268,7 @@ private:
   // Access should only be done via the get/set_generic_pdo methods
   GenericRXPDO rx_pdo_;
   GenericTXPDO tx_pdo_;
+  std::mutex pdo_update_mutex_;
 };
 
 /**

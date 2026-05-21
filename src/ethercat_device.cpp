@@ -44,10 +44,12 @@ ObjectDictionary EthercatDeviceBase::read_od(bool full_read) const
 
 void GenericEthercatDevice::update_write()
 {
+  std::lock_guard<std::mutex> lock(pdo_update_mutex_);
   bus_->write_rx_pdo(get_device_id(), rx_pdo_);
 }
 void GenericEthercatDevice::update_read()
 {
+  std::lock_guard<std::mutex> lock(pdo_update_mutex_);
   tx_pdo_ = bus_->read_tx_pdo(get_device_id());
 };
 
