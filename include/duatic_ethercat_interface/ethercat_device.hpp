@@ -227,7 +227,7 @@ public:
     if (!pdo_initialized) {
       throw DeviceConfigurationError("Cannot access rx pdo - PDOs have not been configured yet");
     }
-
+    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
     return rx_pdo_;
   }
   /**
@@ -241,6 +241,7 @@ public:
       throw DeviceConfigurationError("Cannot access rx pdo - PDOs have not been configured yet");
     }
 
+    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
     rx_pdo_.assign(rx.begin(), rx.end());
   }
   /**
@@ -254,6 +255,7 @@ public:
       throw DeviceConfigurationError("Cannot access tx pdo - PDOs have not been configured yet");
     }
 
+    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
     return tx_pdo_;
   }
 
@@ -268,7 +270,7 @@ private:
   // Access should only be done via the get/set_generic_pdo methods
   GenericRXPDO rx_pdo_;
   GenericTXPDO tx_pdo_;
-  std::mutex pdo_update_mutex_;
+  mutable std::mutex pdo_update_mutex_;
 };
 
 /**
