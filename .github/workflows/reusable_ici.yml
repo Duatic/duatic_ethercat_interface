@@ -51,7 +51,10 @@ jobs:
     if: always()
     needs: check_runner
     name: ${{ inputs.ros_distro }} ${{ inputs.ros_repo }}
-    runs-on: ubuntu-latest
+
+    # If check_runner succeeded, use self-hosted. Otherwise, use ubuntu-latest.
+    runs-on: ${{ (needs.check_runner.result == 'success') && 'self-hosted' || 'ubuntu-latest' }}
+
     env:
       CCACHE_DIR: ${{ github.workspace }}/${{ inputs.ccache_dir }}
       CACHE_PREFIX: ${{ inputs.ros_distro }}-${{ inputs.upstream_workspace }}-${{ inputs.ros_repo }}-${{ github.job }}
