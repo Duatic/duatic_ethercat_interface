@@ -259,6 +259,49 @@ public:
     return tx_pdo_;
   }
 
+  /**
+   * @brief Access the currently configured RX PDO (rx == data the master sends and the device receives)
+   * @note this function is fully thread safe and does not block the bus.
+   */
+  template <typename RXPDO>
+  RXPDO get_rx_pdo() const
+  {
+    // TODO get rid of copy
+    const auto generic = get_generic_rx_pdo();
+    RXPDO temp;
+
+    std::memcpy(&temp, generic.data(), sizeof(RXPDO));
+    return temp;
+  }
+  /**
+   * @brief Configure the next RX PDO to be sent to the device (rx == data the master sends and the device receives)
+   * @note this function is fully thread safe and does not block the bus. The data is copied to the bus on the next
+   * update_write call
+   */
+  template <typename RXPDO>
+  void set_rx_pdo(const RXPDO& rx)
+  {
+    // TODO get rid of copy
+    std::vector<uint8_t> temp(sizeof(RXPDO));
+    std::memcpy(temp.data(), &rx, sizeof(RXPDO));
+
+    set_generic_rx_pdo(temp);
+  }
+  /**
+   * @brief Access the latest received TX PDO (tx == data the device sends the the maste receives)
+   * @note this function is fully thread safe and does not block the bus. The data is copied from the bus at the
+   * update_read call
+   */
+  template <typename TXPDO>
+  TXPDO get_tx_pdo() const
+  {
+    // TODO get rid of copy
+    const auto generic = get_generic_tx_pdo();
+    TXPDO temp;
+    std::memcpy(&temp, generic.data(), sizeof(TXPDO));
+    return temp;
+  }
+
   // Actual implementation of the write/read functions
   // These functions copy the data to the ethercat backend
   void update_write() final;
@@ -299,46 +342,6 @@ public:
     if (configured_tx_pdo_size != sizeof(TXPDO)) {
       throw DeviceConfigurationError("TXPDO size does not match");
     }
-  }
-
-  /**
-   * @brief Access the currently configured RX PDO (rx == data the master sends and the device receives)
-   * @note this function is fully thread safe and does not block the bus.
-   */
-  RXPDO get_rx_pdo() const
-  {
-    // TODO get rid of copy
-    const auto generic = get_generic_rx_pdo();
-    RXPDO temp;
-
-    std::memcpy(&temp, generic.data(), sizeof(RXPDO));
-    return temp;
-  }
-  /**
-   * @brief Configure the next RX PDO to be sent to the device (rx == data the master sends and the device receives)
-   * @note this function is fully thread safe and does not block the bus. The data is copied to the bus on the next
-   * update_write call
-   */
-  void set_rx_pdo(const RXPDO& rx)
-  {
-    // TODO get rid of copy
-    std::vector<uint8_t> temp(sizeof(RXPDO));
-    std::memcpy(temp.data(), &rx, sizeof(RXPDO));
-
-    set_generic_rx_pdo(temp);
-  }
-  /**
-   * @brief Access the latest received TX PDO (tx == data the device sends the the maste receives)
-   * @note this function is fully thread safe and does not block the bus. The data is copied from the bus at the
-   * update_read call
-   */
-  TXPDO get_tx_pdo() const
-  {
-    // TODO get rid of copy
-    const auto generic = get_generic_tx_pdo();
-    TXPDO temp;
-    std::memcpy(&temp, generic.data(), sizeof(TXPDO));
-    return temp;
   }
 };
 
