@@ -62,6 +62,29 @@ struct SDOWriteResult
   }
 };
 
+struct FoEWriteResult
+{
+  bool success{ false };
+  int working_counter{ 0 };
+
+  operator bool() const
+  {
+    return success;
+  }
+};
+struct FoEReadResult
+{
+  bool success{ false };
+  int working_counter{ 0 };
+  std::size_t actual_read_size{ 0 };
+  std::span<const uint8_t> data{};
+
+  operator bool() const
+  {
+    return success;
+  }
+};
+
 using SDOReadCallback = std::function<void(std::span<const uint8_t>, const DeviceId, const SDOIndex, const SDOSubIndex,
                                            const SDOReadResult&)>;
 using SDOWriteCallback = std::function<void(const DeviceId, const SDOIndex, const SDOSubIndex, const SDOWriteResult&)>;

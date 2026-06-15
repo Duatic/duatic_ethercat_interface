@@ -182,7 +182,29 @@ public:
     return bus_->sdo_write<T>(get_device_id(), value, index, sub_index);
   }
 
+  /**
+   * @brief read the full od from the device
+   */
   ObjectDictionary read_od(bool full_read = false) const;
+
+  /**
+   * @brief echange_device_state - try to enforce a state transition of the specified device into the specified state
+   * @param blocking - if true wait for a certain amount of time (determined by the backend) for the transistion to
+   * finish
+   * @return true in case of success
+   * @note not thread safe
+   */
+  bool change_device_state(const DeviceId device_id, const EthercatDeviceState target_state, bool blocking = true);
+  /**
+   * @brief foe_write - perform a file write via ethercat
+   * @note not thread safe
+   */
+  FoEWriteResult foe_write(const DeviceId device_id, const std::string& file_name, std::span<const uint8_t> data);
+  /**
+   * @brief foe_read - perform a file read via ethercat
+   * @note not thread safe
+   */
+  FoEReadResult foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer);
 
 protected:
   // Internal pointer to the actual bus

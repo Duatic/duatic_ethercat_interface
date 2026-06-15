@@ -33,6 +33,7 @@
 
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 #include "duatic_ethercat_interface/types.hpp"
+#include "duatic_ethercat_interface/ethercat_device_state.hpp"
 
 namespace duatic::ethercat_interface
 {
@@ -202,6 +203,25 @@ public:
    * @note thread safe
    */
   std::vector<uint8_t> read_tx_pdo(const DeviceId device_id) const;
+
+  /**
+   * @brief change_device_state - try to start a state transition of the specified device into the specified state
+   * @param blocking - if true wait for a certain amount of time (determined by the backend) for the transistion to
+   * finish
+   * @return true in case of success
+   * @note not thread safe
+   */
+  bool change_device_state(const DeviceId device_id, const EthercatDeviceState target_state, bool blocking = true);
+  /**
+   * @brief foe_write - perform a file write via ethercat
+   * @note not thread safe
+   */
+  FoEWriteResult foe_write(const DeviceId device_id, const std::string& file_name, std::span<const uint8_t> data);
+  /**
+   * @brief foe_read - perform a file read via ethercat
+   * @note not thread safe
+   */
+  FoEReadResult foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer);
 
   /**
    * @brief list_interface - provide a list with all supported interface names

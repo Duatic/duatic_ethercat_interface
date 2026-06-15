@@ -91,6 +91,27 @@ inline std::ostream& operator<<(std::ostream& os, BusState state)
   return os << "Unknown";
 }
 
+static constexpr ec_state map_to_soem_device_state(const EthercatDeviceState state)
+{
+  switch (state) {
+    case EthercatDeviceState::None:
+      return ec_state::EC_STATE_NONE;
+    case EthercatDeviceState::Init:
+      return ec_state::EC_STATE_INIT;
+    case EthercatDeviceState::PreOp:
+      return ec_state::EC_STATE_PRE_OP;
+    case EthercatDeviceState::Boot:
+      return ec_state::EC_STATE_BOOT;
+    case EthercatDeviceState::SafeOp:
+      return ec_state::EC_STATE_SAFE_OP;
+    case EthercatDeviceState::Operational:
+      return ec_state::EC_STATE_OPERATIONAL;
+
+    default:
+      return ec_state::EC_STATE_NONE;
+  }
+}
+
 struct EthercatBus::BackendImpl
 {
   explicit BackendImpl(const Parameters& params)
@@ -714,6 +735,39 @@ struct EthercatBus::BackendImpl
     return result;
   }
 
+  FoEWriteResult foe_write(const DeviceId device_id, const std::string& file_name, std::span<const uint8_t> data)
+  {
+    const int wkc =
+        ecx_FOEwrite(&context_.context, device_id, const_cast<char*>(file_name.c_str()), 0,
+                     static_cast<int>(data.size()), const_cast<uint8_t*>(data.data()), EC_TIMEOUTRXM * 1000);
+    return FoEWriteResult{ .success = wkc == 1, .working_counter = wkc };
+  }
+  FoEReadResult foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
+  {
+    int actual_size = static_cast<int>(buffer.size());
+    const int wkc = ecx_FOEread(&context_.context, device_id, const_cast<char*>(file_name.c_str()), 0, &actual_size,
+                                buffer.data(), EC_TIMEOUTRXM * 1000);
+
+    return FoEReadResult{ .success = wkc == 1,
+                          .working_counter = wkc,
+                          .actual_read_size = static_cast<std::size_t>(actual_size),
+                          .data = std::span(buffer.data(), static_cast<std::size_t>(actual_size)) };
+  }
+  bool set_device_target_state(const DeviceId device_id, ec_state target_state)
+  {
+    context_.ecatSlavelist_[device_id].state = target_state;
+    return ecx_writestate(&context_.context, device_id) > 0;
+  }
+  bool wait_for_device_target_state(const DeviceId device_id, ec_state target_state, int timeout = EC_TIMEOUTSTATE)
+  {
+    return ecx_statecheck(&context_.context, device_id, target_state, timeout) == target_state;
+  }
+  ec_state get_device_state(const DeviceId device_id)
+  {
+    // Note ecx_readstate needs to be called once before to update the state
+    return static_cast<ec_state>(context_.ecatSlavelist_[device_id].state);
+  }
+
 private:
   // Parameterization
   const std::string interface_;
@@ -745,21 +799,6 @@ private:
   BusState get_bus_state() const
   {
     return state_;
-  }
-
-  bool set_device_target_state(const DeviceId device_id, ec_state target_state)
-  {
-    context_.ecatSlavelist_[device_id].state = target_state;
-    return ecx_writestate(&context_.context, device_id) > 0;
-  }
-  bool wait_for_device_target_state(const DeviceId device_id, ec_state target_state, int timeout = EC_TIMEOUTSTATE)
-  {
-    return ecx_statecheck(&context_.context, device_id, target_state, timeout) == target_state;
-  }
-  ec_state get_device_state(const DeviceId device_id)
-  {
-    // Note ecx_readstate needs to be called once before to update the state
-    return static_cast<ec_state>(context_.ecatSlavelist_[device_id].state);
   }
 
   void internal_pdo_update()
@@ -998,5 +1037,30 @@ template bool EthercatBus::sdo_write<uint64_t>(DeviceId, const uint64_t, SDOInde
 template bool EthercatBus::sdo_write<int64_t>(DeviceId, const int64_t, SDOIndex, SDOSubIndex);
 template bool EthercatBus::sdo_write<float>(DeviceId, const float, SDOIndex, SDOSubIndex);
 template bool EthercatBus::sdo_write<double>(DeviceId, const double, SDOIndex, SDOSubIndex);
+
+FoEWriteResult EthercatBus::foe_write(const DeviceId device_id, const std::string& file_name,
+                                      std::span<const uint8_t> data)
+{
+  return impl_->foe_write(device_id, file_name, data);
+}
+FoEReadResult EthercatBus::foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
+{
+  return impl_->foe_read(device_id, file_name, buffer);
+}
+
+bool EthercatBus::change_device_state(const DeviceId device_id, const EthercatDeviceState target_state, bool blocking)
+{
+  // Convert into soem internal type
+  const auto soem_state = map_to_soem_device_state(target_state);
+  // Request the state change
+  bool res = impl_->set_device_target_state(device_id, soem_state);
+
+  // Handle the case that the user does not want to block or that the set command failed
+  if (!blocking || !res) {
+    return res;
+  }
+
+  return impl_->wait_for_device_target_state(device_id, soem_state);
+}
 
 }  // namespace duatic::ethercat_interface

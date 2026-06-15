@@ -22,53 +22,27 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "duatic_ethercat_interface/ethercat_device.hpp"
-#include "duatic_ethercat_interface/ethercat_bus.hpp"
+#pragma once
+
+#include <span>
+#include <cstdint>
+#include <functional>
+#include <ostream>
+#include <iomanip>
+#include <string>
 
 namespace duatic::ethercat_interface
 {
-EthercatDeviceBase::EthercatDeviceBase(const Hooks& hooks) : hooks_(hooks)
+/**
+ * @brief representation of ethercat device statesoot
+ */
+enum class EthercatDeviceState
 {
-}
-void EthercatDeviceBase::configure(EthercatBus* bus, DeviceInfo device_info)
-{
-  device_info_ = device_info;
-  bus_ = bus;
-  on_configure();
-}
-
-ObjectDictionary EthercatDeviceBase::read_od(bool full_read) const
-{
-  return bus_->read_od(get_device_id(), full_read);
-}
-
-bool EthercatDeviceBase::change_device_state(const DeviceId device_id, const EthercatDeviceState target_state,
-                                             bool blocking)
-{
-  return bus_->change_device_state(get_device_id(), target_state, blocking);
-}
-
-FoEWriteResult EthercatDeviceBase::foe_write(const DeviceId device_id, const std::string& file_name,
-                                             std::span<const uint8_t> data)
-{
-  return bus_->foe_write(device_id, file_name, data);
-}
-
-FoEReadResult EthercatDeviceBase::foe_read(const DeviceId device_id, const std::string& file_name,
-                                           std::span<uint8_t> buffer)
-{
-  return bus_->foe_read(device_id, file_name, buffer);
-}
-
-void GenericEthercatDevice::update_write()
-{
-  std::lock_guard<std::mutex> lock(pdo_update_mutex_);
-  bus_->write_rx_pdo(get_device_id(), rx_pdo_);
-}
-void GenericEthercatDevice::update_read()
-{
-  std::lock_guard<std::mutex> lock(pdo_update_mutex_);
-  tx_pdo_ = bus_->read_tx_pdo(get_device_id());
+  None,
+  Init,
+  PreOp,
+  Boot,
+  SafeOp,
+  Operational,
 };
-
 }  // namespace duatic::ethercat_interface
