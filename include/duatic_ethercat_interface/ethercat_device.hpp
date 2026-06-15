@@ -197,7 +197,7 @@ private:
  * @brief a generic wrapper around an ethercat device which allows non typed access to the device
  * @note this is for sdk / tooling usage only
  */
-class GenericEthercatDevice : public EthercatDeviceBase
+class GenericEthercatDevice final : public EthercatDeviceBase
 {
 public:
   using GenericRXPDO = std::vector<uint8_t>;
@@ -266,6 +266,11 @@ public:
   template <typename RXPDO>
   RXPDO get_rx_pdo() const
   {
+    static_assert(std::is_trivially_copyable_v<RXPDO>);
+    if (sizeof(RXPDO) != rx_pdo_.size()) {
+      throw DeviceConfigurationError("RXPDO size (" + std::to_string(sizeof(RXPDO)) +
+                                     ") does not match configured size (" + std::to_string(rx_pdo_.size()) + ")");
+    }
     // TODO get rid of copy
     const auto generic = get_generic_rx_pdo();
     RXPDO temp;
@@ -281,6 +286,11 @@ public:
   template <typename RXPDO>
   void set_rx_pdo(const RXPDO& rx)
   {
+    static_assert(std::is_trivially_copyable_v<RXPDO>);
+    if (sizeof(RXPDO) != rx_pdo_.size()) {
+      throw DeviceConfigurationError("RXPDO size (" + std::to_string(sizeof(RXPDO)) +
+                                     ") does not match configured size (" + std::to_string(rx_pdo_.size()) + ")");
+    }
     // TODO get rid of copy
     std::vector<uint8_t> temp(sizeof(RXPDO));
     std::memcpy(temp.data(), &rx, sizeof(RXPDO));
@@ -295,6 +305,11 @@ public:
   template <typename TXPDO>
   TXPDO get_tx_pdo() const
   {
+    static_assert(std::is_trivially_copyable_v<TXPDO>);
+    if (sizeof(TXPDO) != rx_pdo_.size()) {
+      throw DeviceConfigurationError("TXPDO size (" + std::to_string(sizeof(TXPDO)) +
+                                     ") does not match configured size (" + std::to_string(rx_pdo_.size()) + ")");
+    }
     // TODO get rid of copy
     const auto generic = get_generic_tx_pdo();
     TXPDO temp;
@@ -314,35 +329,6 @@ private:
   GenericRXPDO rx_pdo_;
   GenericTXPDO tx_pdo_;
   mutable std::mutex pdo_update_mutex_;
-};
-
-/**
- * @brief Actual base class which should be used in the end by a user. It encodes the selected PDOs
- */
-template <typename RXPDO, typename TXPDO>
-class EthercatDevice final : public GenericEthercatDevice
-{
-public:
-  // Enforce POD datatypes as otherwise the generic -> non generic copy assumptions do not hold
-  static_assert(std::is_trivially_copyable_v<RXPDO>);
-  static_assert(std::is_trivially_copyable_v<TXPDO>);
-
-  explicit EthercatDevice(const Hooks& hooks = {}) : GenericEthercatDevice(hooks)
-  {
-  }
-
-  void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) final
-  {
-    // Important to call base class function as the actual allocation happens here
-    GenericEthercatDevice::on_pdo_configured(configured_rx_pdo_size, configured_tx_pdo_size);
-    // Only check if sizes are matching
-    if (configured_rx_pdo_size != sizeof(RXPDO)) {
-      throw DeviceConfigurationError("RXPDO size does not match");
-    }
-    if (configured_tx_pdo_size != sizeof(TXPDO)) {
-      throw DeviceConfigurationError("TXPDO size does not match");
-    }
-  }
 };
 
 }  // namespace duatic::ethercat_interface

@@ -42,7 +42,7 @@ struct TX
 class Drive
 {
 public:
-  using Device = EthercatDevice<RX, TX>;
+  using Device = GenericEthercatDevice;
   using DevicePtr = std::shared_ptr<Device>;
 
   Drive() : device_(std::make_shared<Device>())
@@ -58,6 +58,7 @@ public:
   }
   int get_reading()
   {
+    device_->get_rx_pdo<RX>();
     return 0;
   }
   void set_command(int cmd)
