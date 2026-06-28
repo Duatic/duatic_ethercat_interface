@@ -24,10 +24,11 @@
 
 #include "duatic_ethercat_interface/ethercat_bus.hpp"
 
-#include <mutex>   // NOLINT(build/include_order)
-#include <thread>  // NOLINT(build/include_order)
-#include <queue>   // NOLINT(build/include_order)
-#include <atomic>  // NOLINT(build/include_order)
+#include <mutex>     // NOLINT(build/include_order)
+#include <thread>    // NOLINT(build/include_order)
+#include <queue>     // NOLINT(build/include_order)
+#include <atomic>    // NOLINT(build/include_order)
+#include <optional>  // NOLINT(build/include_order)
 
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/ethercat_device.hpp"
