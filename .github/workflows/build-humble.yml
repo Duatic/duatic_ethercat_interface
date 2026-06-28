@@ -13,7 +13,7 @@ on:
       timezone: "Europe/Zurich"
 
 jobs:
-  jazzy_binary_main:
+  humble_binary_main:
     uses: ./.github/workflows/reusable_ici.yml
     with:
       ros_distro: humble
