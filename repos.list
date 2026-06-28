@@ -7,7 +7,4 @@ repositories:
     type: git
     url: https://github.com/Duatic/soem_vendor.git
     version: main
-  etherlab_vendor:
-    type: git
-    url: https://github.com/Duatic/soem_vendor.git
-    version: main
+
