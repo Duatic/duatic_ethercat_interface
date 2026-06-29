@@ -146,7 +146,7 @@ public:
    * @note you can also read from devices which have not been added via "attach_device"
    */
   SDOReadResult read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                                 const SDOSubIndex sub_index);
+                                 const SDOSubIndex sub_index, bool check_size = true);
   /**
    * @brief write_sdo_untyped - pefrom a blocking write to the specified sdo from the given buffer
    * @throws DeviceNotFound if the device is not on the bus
@@ -168,7 +168,7 @@ public:
    * TODO improve callback threading model
    */
   void read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                        const SDOSubIndex sub_index, const SDOReadCallback& cb);
+                        const SDOSubIndex sub_index, const SDOReadCallback& cb, bool check_size = true);
   /**
    * @brief write_sdo_untyped - perform a nonblock write to the specified sdo to the given buffer. On finish the
    * callback will be called

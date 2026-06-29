@@ -147,7 +147,8 @@ struct EthercatBus::BackendImpl
   }
 
   SDOReadResult read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                                 const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
+                                 const SDOSubIndex sub_index = 0, bool check_size = true,
+                                 const int timeout = EC_TIMEOUTRXM)
   {
     // NOTE we only report some errors as exceptions as for example working counter too low can happen also in normal
     // operation In this case simply false is returned
@@ -206,7 +207,7 @@ struct EthercatBus::BackendImpl
         return SDOReadResult{ .success = false, .actual_size_read = actual_size, .working_counter = wkc };
       }
 
-      if (requested_size != actual_size) {
+      if (check_size && requested_size != actual_size) {
         logging::error(logger_) << "Device id  " << device_id << ": Size mismatch (expected " << requested_size
                                 << " bytes, read " << actual_size << " bytes) for reading SDO (ID: 0x"
                                 << std::setfill('0') << std::setw(4) << std::hex << index << ", SID 0x"
@@ -218,7 +219,8 @@ struct EthercatBus::BackendImpl
     }
   }
   void read_sdo_untyped_async(const SDOReadCallback& cb, std::span<uint8_t> data, const DeviceId device_id,
-                              const SDOIndex index, const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
+                              const SDOIndex index, const SDOSubIndex sub_index = 0, bool check_size = true,
+                              const int timeout = EC_TIMEOUTRXM)
   {
     // NOTE we only report some errors as exceptions as for example working counter too low can happen also in normal
     // operation In this case simply false is returned
@@ -276,7 +278,7 @@ struct EthercatBus::BackendImpl
         result = SDOReadResult{ .success = true, .actual_size_read = actual_size, .working_counter = wkc };
       }
 
-      if (requested_size != actual_size) {
+      if (check_size && requested_size != actual_size) {
         logging::error(logger_) << "Device id  " << device_id << ": Size mismatch (expected " << requested_size
                                 << " bytes, read " << actual_size << " bytes) for reading SDO (ID: 0x"
                                 << std::setfill('0') << std::setw(4) << std::hex << index << ", SID 0x"
@@ -871,14 +873,14 @@ bool EthercatBus::has_device(const DeviceId device_id) const
 }
 
 SDOReadResult EthercatBus::read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                                            const SDOSubIndex sub_index)
+                                            const SDOSubIndex sub_index, bool check_size)
 {
-  return impl_->read_sdo_untyped(data, device_id, index, sub_index);
+  return impl_->read_sdo_untyped(data, device_id, index, sub_index, check_size);
 }
 void EthercatBus::read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
-                                   const SDOSubIndex sub_index, const SDOReadCallback& cb)
+                                   const SDOSubIndex sub_index, const SDOReadCallback& cb, bool check_size)
 {
-  impl_->read_sdo_untyped_async(cb, data, device_id, index, sub_index);
+  impl_->read_sdo_untyped_async(cb, data, device_id, index, sub_index, check_size);
 }
 SDOWriteResult EthercatBus::write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id,
                                               const SDOIndex index, const SDOSubIndex sub_index)
@@ -976,7 +978,8 @@ std::optional<std::string> EthercatBus::sdo_read<std::string>(const DeviceId dev
   std::vector<char> data(maximum_visible_string_size, 0);
   // Create a uin8t_t span reprensentation of it
   std::span<uint8_t> buffer(reinterpret_cast<uint8_t*>(data.data()), data.size());
-  const auto result = read_sdo_untyped(buffer, device_id, index, sub_index);
+  const auto result =
+      read_sdo_untyped(buffer, device_id, index, sub_index, false /*do not perform size check for string reads*/);
   if (!result) {
     // Something during the read failed
     return std::nullopt;

@@ -42,22 +42,19 @@ ObjectDictionary EthercatDeviceBase::read_od(bool full_read) const
   return bus_->read_od(get_device_id(), full_read);
 }
 
-bool EthercatDeviceBase::change_device_state(const DeviceId device_id, const EthercatDeviceState target_state,
-                                             bool blocking)
+bool EthercatDeviceBase::change_device_state(const EthercatDeviceState target_state, bool blocking)
 {
   return bus_->change_device_state(get_device_id(), target_state, blocking);
 }
 
-FoEWriteResult EthercatDeviceBase::foe_write(const DeviceId device_id, const std::string& file_name,
-                                             std::span<const uint8_t> data)
+FoEWriteResult EthercatDeviceBase::foe_write(const std::string& file_name, std::span<const uint8_t> data)
 {
-  return bus_->foe_write(device_id, file_name, data);
+  return bus_->foe_write(get_device_id(), file_name, data);
 }
 
-FoEReadResult EthercatDeviceBase::foe_read(const DeviceId device_id, const std::string& file_name,
-                                           std::span<uint8_t> buffer)
+FoEReadResult EthercatDeviceBase::foe_read(const std::string& file_name, std::span<uint8_t> buffer)
 {
-  return bus_->foe_read(device_id, file_name, buffer);
+  return bus_->foe_read(get_device_id(), file_name, buffer);
 }
 
 void GenericEthercatDevice::update_write()
