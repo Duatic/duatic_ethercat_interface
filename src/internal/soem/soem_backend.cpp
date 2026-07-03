@@ -537,7 +537,14 @@ struct EthercatBus::BackendImpl
     return std::find_if(devices_.begin(), devices_.end(),
                         [&](const auto& d) { return d->get_device_id() == device_id; }) != devices_.end();
   }
-
+  /**
+   * @brief check if the specific device has been found on the bus
+   * @note this is different to "has_device" which checks if we handle a specific device
+   */
+  bool has_device_on_bus(const DeviceId id) const
+  {
+    return id > 0 && id <= get_device_count();
+  }
   void update()
   {
     // First thing after startup is to bring the devices into operational state
@@ -882,15 +889,6 @@ private:
       device->update_read();
     }
   }
-
-  /**
-   * @brief check if the specific device has been found on the bus
-   * @note this is different to "has_device" which checks if we handle a specific device
-   */
-  bool has_device_on_bus(const DeviceId id) const
-  {
-    return id > 0 && id <= get_device_count();
-  }
 };
 
 // Pimpl - redirections
@@ -924,6 +922,10 @@ void EthercatBus::attach_device(const DeviceId device_id, std::shared_ptr<Etherc
 bool EthercatBus::has_device(const DeviceId device_id) const
 {
   return impl_->has_device(device_id);
+}
+bool EthercatBus::has_device_on_bus(const DeviceId device_id) const
+{
+  return impl_->has_device_on_bus(device_id);
 }
 
 SDOReadResult EthercatBus::read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
