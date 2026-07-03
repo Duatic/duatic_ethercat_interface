@@ -771,6 +771,60 @@ struct EthercatBus::BackendImpl
     return static_cast<ec_state>(context_.ecatSlavelist_[device_id].state);
   }
 
+  RegisterReadResult read_register_untyped(std::span<uint8_t> data, const DeviceId device_id,
+                                           const RegisterAddress address, bool check_size)
+  {
+    // Only perform operations on an initialized bus
+    if (get_bus_state() == BusState::PreInit) {
+      throw BackendError("Backend not initialized - cannot perform SDO operations", Backend::SOEM);
+    }
+    // And only on devices that are actually on the bus
+    if (!has_device_on_bus(device_id)) {
+      throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
+    }
+    if (data.size() > std::numeric_limits<uint16_t>::max()) {
+      throw std::logic_error("Requested data size too large");
+    }
+
+    // TODO(firesurfer) With SOEM we can only do fully blocking calls. Nevertheless it makes sense to implement the
+    // mechanism as with SDO read/writes to handle thread synchronisation
+
+    const uint16_t size = static_cast<uint16_t>(data.size());
+    const int wkc = ecx_FPRD(&context_.ecat_port, context_.ecatSlavelist_[device_id].configadr, address, size,
+                             data.data(), EC_TIMEOUTRET3);
+
+    return RegisterReadResult{
+      .success = wkc > 0,
+      .working_counter = wkc,
+      .actual_read_size = size,
+      .data = data,
+    };
+  }
+
+  RegisterWriteResult write_register_untyped(std::span<const uint8_t> data, const DeviceId device_id,
+                                             const RegisterAddress address)
+  {
+    // Only perform operations on an initialized bus
+    if (get_bus_state() == BusState::PreInit) {
+      throw BackendError("Backend not initialized - cannot perform SDO operations", Backend::SOEM);
+    }
+    // And only on devices that are actually on the bus
+    if (!has_device_on_bus(device_id)) {
+      throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
+    }
+    if (data.size() > std::numeric_limits<uint16_t>::max()) {
+      throw std::logic_error("Requested data size too large");
+    }
+
+    // TODO(firesurfer) With SOEM we can only do fully blocking calls. Nevertheless it makes sense to implement the
+    // mechanism as with SDO
+    // read/writes to handle thread synchronisation
+    const uint16_t size = static_cast<uint16_t>(data.size());
+    const int wkc = ecx_FPWR(&context_.ecat_port, context_.ecatSlavelist_[device_id].configadr, address, size,
+                             const_cast<uint8_t*>(data.data()), EC_TIMEOUTRET3);
+    return RegisterWriteResult{ .success = wkc > 0, .working_counter = wkc };
+  }
+
 private:
   // Parameterization
   const std::string interface_;
@@ -1066,5 +1120,67 @@ bool EthercatBus::change_device_state(const DeviceId device_id, const EthercatDe
 
   return impl_->wait_for_device_target_state(device_id, soem_state);
 }
+
+RegisterReadResult EthercatBus::read_register_untyped(std::span<uint8_t> data, const DeviceId device_id,
+                                                      const RegisterAddress address, bool check_size)
+{
+  return impl_->read_register_untyped(data, device_id, address, check_size);
+}
+
+RegisterWriteResult EthercatBus::write_register_untyped(std::span<const uint8_t> data, const DeviceId device_id,
+                                                        const RegisterAddress address)
+{
+  return impl_->write_register_untyped(data, device_id, address);
+}
+
+template <typename T>
+std::optional<T> EthercatBus::register_read(const DeviceId device_id, const RegisterAddress address, bool check_size)
+{
+  // This is the actual data instance we use
+  T data{};
+  // And this is just a safe representation (pointer + size) to it
+  std::span<uint8_t> buffer(reinterpret_cast<uint8_t*>(&data), sizeof(T));
+
+  if (!read_register_untyped(buffer, device_id, address, check_size)) {
+    return std::nullopt;
+  }
+  return data;
+}
+
+template std::optional<bool> EthercatBus::register_read<bool>(DeviceId, RegisterAddress, bool);
+template std::optional<uint8_t> EthercatBus::register_read<uint8_t>(DeviceId, RegisterAddress, bool);
+template std::optional<int8_t> EthercatBus::register_read<int8_t>(DeviceId, RegisterAddress, bool);
+template std::optional<uint16_t> EthercatBus::register_read<uint16_t>(DeviceId, RegisterAddress, bool);
+template std::optional<int16_t> EthercatBus::register_read<int16_t>(DeviceId, RegisterAddress, bool);
+template std::optional<uint32_t> EthercatBus::register_read<uint32_t>(DeviceId, RegisterAddress, bool);
+template std::optional<int32_t> EthercatBus::register_read<int32_t>(DeviceId, RegisterAddress, bool);
+template std::optional<uint64_t> EthercatBus::register_read<uint64_t>(DeviceId, RegisterAddress, bool);
+template std::optional<int64_t> EthercatBus::register_read<int64_t>(DeviceId, RegisterAddress, bool);
+template std::optional<float> EthercatBus::register_read<float>(DeviceId, RegisterAddress, bool);
+template std::optional<double> EthercatBus::register_read<double>(DeviceId, RegisterAddress, bool);
+
+template <typename T>
+bool EthercatBus::register_write(const DeviceId device_id, const RegisterAddress address, const T data)
+{
+  // Call by value makes this function safer in case the call needs to be queued
+  std::span<const uint8_t> data_wrap(reinterpret_cast<const uint8_t*>(&data), sizeof(T));
+  const auto result = write_register_untyped(data_wrap, device_id, address);
+  if (!result) {
+    return false;
+  }
+  return true;
+}
+
+template bool EthercatBus::register_write<bool>(DeviceId, RegisterAddress, const bool);
+template bool EthercatBus::register_write<uint8_t>(DeviceId, RegisterAddress, const uint8_t);
+template bool EthercatBus::register_write<int8_t>(DeviceId, RegisterAddress, const int8_t);
+template bool EthercatBus::register_write<uint16_t>(DeviceId, RegisterAddress, const uint16_t);
+template bool EthercatBus::register_write<int16_t>(DeviceId, RegisterAddress, const int16_t);
+template bool EthercatBus::register_write<uint32_t>(DeviceId, RegisterAddress, const uint32_t);
+template bool EthercatBus::register_write<int32_t>(DeviceId, RegisterAddress, const int32_t);
+template bool EthercatBus::register_write<uint64_t>(DeviceId, RegisterAddress, const uint64_t);
+template bool EthercatBus::register_write<int64_t>(DeviceId, RegisterAddress, const int64_t);
+template bool EthercatBus::register_write<float>(DeviceId, RegisterAddress, const float);
+template bool EthercatBus::register_write<double>(DeviceId, RegisterAddress, const double);
 
 }  // namespace duatic::ethercat_interface

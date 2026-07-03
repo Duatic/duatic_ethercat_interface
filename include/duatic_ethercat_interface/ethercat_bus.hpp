@@ -104,7 +104,6 @@ public:
 
   /**
    * @brief update - perform a single bus update step
-   * @note in case UpdateMode::Synchronous was used this method does nothing
    * @note thread safe
    */
   void update();
@@ -222,6 +221,24 @@ public:
    * @note not thread safe
    */
   FoEReadResult foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer);
+
+  /**
+   * @brief read_register_untyped - perform a blocking read to the specified ESC register
+   * @note thread_safe
+   */
+  RegisterReadResult read_register_untyped(std::span<uint8_t> data, const DeviceId device_id,
+                                           const RegisterAddress address, bool check_size = true);
+  /**
+   * @brief write_register_untyped - perform a blocking read to the specified ESC register
+   * @note thread_safe
+   */
+  RegisterWriteResult write_register_untyped(std::span<const uint8_t> data, const DeviceId device_id,
+                                             const RegisterAddress address);
+
+  template <typename T>
+  std::optional<T> register_read(const DeviceId device_id, const RegisterAddress address, bool check_size = true);
+  template <typename T>
+  bool register_write(const DeviceId device_id, const RegisterAddress address, const T data);
 
   /**
    * @brief list_interface - provide a list with all supported interface names

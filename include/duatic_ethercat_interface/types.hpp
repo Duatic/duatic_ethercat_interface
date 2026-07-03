@@ -36,9 +36,11 @@ namespace duatic::ethercat_interface
 using DeviceId = uint16_t;
 using SDOIndex = uint16_t;
 using SDOSubIndex = uint8_t;
+using RegisterAddress = uint16_t;
 
 constexpr std::size_t maximum_visible_string_size = 255;
 
+// Types for SDO (ServiceDataObject) interactions
 struct SDOReadResult
 {
   bool success{ false };
@@ -62,6 +64,7 @@ struct SDOWriteResult
   }
 };
 
+// Types for FileOverEthercat interactions
 struct FoEWriteResult
 {
   bool success{ false };
@@ -73,6 +76,30 @@ struct FoEWriteResult
   }
 };
 struct FoEReadResult
+{
+  bool success{ false };
+  int working_counter{ 0 };
+  std::size_t actual_read_size{ 0 };
+  std::span<const uint8_t> data{};
+
+  operator bool() const
+  {
+    return success;
+  }
+};
+
+// Types for Ethercat Register interactions
+struct RegisterWriteResult
+{
+  bool success{ false };
+  int working_counter{ 0 };
+
+  operator bool() const
+  {
+    return success;
+  }
+};
+struct RegisterReadResult
 {
   bool success{ false };
   int working_counter{ 0 };
