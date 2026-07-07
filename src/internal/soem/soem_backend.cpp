@@ -867,9 +867,11 @@ private:
 
   void internal_pdo_update()
   {
+    // Obtain the current timestamp we stamp on the read /write times
+    const auto now = std::chrono::high_resolution_clock::now();
     // Take the latest tx pdo state from every device
     for (auto& device : devices_) {
-      device->update_write();
+      device->update_write(now);
     }
     {  // Important to lock after update_write(), otherwise update_write will deadlock
       std::lock_guard<std::mutex> lock(pdo_update_mutex_);
@@ -886,7 +888,7 @@ private:
     }  // Important to unlock here, otherwise update_read() will deadlock
     // Update the pdo state of every device
     for (auto& device : devices_) {
-      device->update_read();
+      device->update_read(now);
     }
   }
 };

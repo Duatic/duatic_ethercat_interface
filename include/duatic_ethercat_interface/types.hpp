@@ -30,9 +30,14 @@
 #include <ostream>
 #include <iomanip>
 #include <string>
-
+#include <chrono>
 namespace duatic::ethercat_interface
 {
+
+using TimeStamp = std::chrono::system_clock::time_point;
+using HighPrecisionClock = std::chrono::high_resolution_clock;
+using HighPrecisionTimeStamp = std::chrono::high_resolution_clock::time_point;
+
 using DeviceId = uint16_t;
 using SDOIndex = uint16_t;
 using SDOSubIndex = uint8_t;

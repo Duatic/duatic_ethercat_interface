@@ -57,15 +57,17 @@ FoEReadResult EthercatDeviceBase::foe_read(const std::string& file_name, std::sp
   return bus_->foe_read(get_device_id(), file_name, buffer);
 }
 
-void GenericEthercatDevice::update_write()
+void GenericEthercatDevice::update_write(const HighPrecisionTimeStamp& tp)
 {
   std::lock_guard<std::mutex> lock(pdo_update_mutex_);
   bus_->write_rx_pdo(get_device_id(), rx_pdo_);
+  rx_pdo_last_write_time_ = tp;
 }
-void GenericEthercatDevice::update_read()
+void GenericEthercatDevice::update_read(const HighPrecisionTimeStamp& tp)
 {
   std::lock_guard<std::mutex> lock(pdo_update_mutex_);
   tx_pdo_ = bus_->read_tx_pdo(get_device_id());
+  tx_pdo_last_read_time_ = tp;
 };
 
 }  // namespace duatic::ethercat_interface

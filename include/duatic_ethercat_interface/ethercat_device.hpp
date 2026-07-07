@@ -163,11 +163,11 @@ public:
   /**
    * @brief update_write - callback which gets called __before__ pdo data is sent over the line
    */
-  virtual void update_write() = 0;
+  virtual void update_write(const HighPrecisionTimeStamp& tp) = 0;
   /**
    * @brief update_read - callback which gets called __after__ pdo data has been read from the line
    */
-  virtual void update_read() = 0;
+  virtual void update_read(const HighPrecisionTimeStamp& tp) = 0;
 
   // Helper functions for performing sdo read and writes
   template <typename T>
@@ -232,7 +232,9 @@ public:
   {
     // For the generic device we need to allocate the necessary buffers
     rx_pdo_.resize(configured_rx_pdo_size, 0);
+    rx_pdo_last_write_time_ = HighPrecisionClock::now();
     tx_pdo_.resize(configured_tx_pdo_size, 0);
+    tx_pdo_last_read_time_ = HighPrecisionClock::now();
 
     pdo_initialized = true;
 
@@ -338,18 +340,38 @@ public:
     std::memcpy(&temp, generic.data(), sizeof(TXPDO));
     return temp;
   }
+  /**
+   * @brief Latest RX PDO write time stamp
+   * Obtain the latest point in time when the internal rx pdo copy was written on the bus
+   * @note this function is thread safe (within API usage scheme)
+   */
+  const HighPrecisionTimeStamp& get_last_rx_pdo_write_time() const
+  {
+    return rx_pdo_last_write_time_;
+  }
+  /**
+   * @brief Latest TX PDO read time stamp
+   * Obtain the latest point in the time when the internal tx pdo copy was updated from the bus
+   * @note this function is thread safe (within API usage scheme)
+   */
+  const HighPrecisionTimeStamp& get_last_tx_pdo_read_time() const
+  {
+    return tx_pdo_last_read_time_;
+  }
 
   // Actual implementation of the write/read functions
   // These functions copy the data to the ethercat backend
-  void update_write() final;
-  void update_read() final;
+  void update_write(const HighPrecisionTimeStamp& tp) final;
+  void update_read(const HighPrecisionTimeStamp& tp) final;
 
 private:
   bool pdo_initialized = false;
 
   // Access should only be done via the get/set_generic_pdo methods
   GenericRXPDO rx_pdo_;
+  HighPrecisionTimeStamp rx_pdo_last_write_time_;
   GenericTXPDO tx_pdo_;
+  HighPrecisionTimeStamp tx_pdo_last_read_time_;
   mutable std::mutex pdo_update_mutex_;
 };
 
