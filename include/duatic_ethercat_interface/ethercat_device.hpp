@@ -162,10 +162,12 @@ public:
   }
   /**
    * @brief update_write - callback which gets called __before__ pdo data is sent over the line
+   * @note do not manually call this function
    */
   virtual void update_write(const HighPrecisionTimeStamp& tp) = 0;
   /**
    * @brief update_read - callback which gets called __after__ pdo data has been read from the line
+   * @note do not manually call this function
    */
   virtual void update_read(const HighPrecisionTimeStamp& tp) = 0;
 
@@ -361,6 +363,7 @@ public:
 
   // Actual implementation of the write/read functions
   // These functions copy the data to the ethercat backend
+  // DO NOT call them by hand
   void update_write(const HighPrecisionTimeStamp& tp) final;
   void update_read(const HighPrecisionTimeStamp& tp) final;
 
