@@ -67,6 +67,11 @@ public:
    */
   void add_bus(std::shared_ptr<EthercatBus>& bus)
   {
+    // As the distributed clock depends on the update rate we need to check that it matches
+    const auto& params = bus->get_parameters();
+    if (params.dc_enabled && params.dc_cycle_time != params_.update_rate) {
+      throw ExecutorError("DC cycle time does not match controller update rate");
+    }
     if (spinning_) {
       throw ExecutorError("Executor already spinning - cannot add additional bus");
     }

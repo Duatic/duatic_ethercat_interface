@@ -449,6 +449,11 @@ struct EthercatBus::BackendImpl
     ecx_configdc(&context_.context);
     update_bus_state(BusState::Configured);
 
+    // Setup distributed clock
+    if(params_.dc_enabled){
+      ecx_configdc(&context_.context);
+    }
+
     // Notify all devices that the pdos have now been configured
     for (auto& device : devices_) {
       device->on_pdo_configured(context_.ecatSlavelist_[device->get_device_id()].Obytes,
@@ -484,6 +489,7 @@ struct EthercatBus::BackendImpl
         throw BackendError("Device did not reach 'SAFE_OP' state - aborting activation", Backend::SOEM);
       }
     }
+
 
     // Bus is now in activated state so the update method knows that it needs to push devices into OPERATIONAL first
     update_bus_state(BusState::Activated);

@@ -51,6 +51,12 @@ public:
   {
     // Name of the ethernet interface
     std::string interface;
+
+    // distributed clock configuration
+    bool dc_enabled{false};
+    std::chrono::nanoseconds dc_cycle_time{};
+    std::chrono::nanoseconds dc_sync0_shift{};
+    std::chrono::nanoseconds dc_sync1_shift{};
   };
 
   explicit EthercatBus(const Parameters& params);
