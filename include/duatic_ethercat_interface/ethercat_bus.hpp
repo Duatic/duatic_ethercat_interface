@@ -33,7 +33,6 @@
 
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 #include "duatic_ethercat_interface/types.hpp"
-#include "duatic_ethercat_interface/ethercat_device_state.hpp"
 
 namespace duatic::ethercat_interface
 {
@@ -239,6 +238,7 @@ public:
   std::optional<T> register_read(const DeviceId device_id, const RegisterAddress address, bool check_size = true);
   template <typename T>
   bool register_write(const DeviceId device_id, const RegisterAddress address, const T data);
+
 
   /**
    * @brief list_interface - provide a list with all supported interface names
