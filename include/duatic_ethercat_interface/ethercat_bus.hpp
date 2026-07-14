@@ -249,6 +249,14 @@ public:
   bool register_write(const DeviceId device_id, const RegisterAddress address, const T data);
 
   /**
+   * @brief diagnostics - obtain a diagnostics snapshot of the current bus state
+   * These are mostly accumulated diagnostics data
+   * @param force_update - instead of obtaining a passive diagnostics snapshop actively read diagnostics now
+   * @note only threadsafe if force_update = false
+   */
+  const DiagnosticsSnapshot& diagnostics(bool force_update = false);
+
+  /**
    * @brief list_interface - provide a list with all supported interface names
    * @return list of strings of the interface names
    * @note not thread safe

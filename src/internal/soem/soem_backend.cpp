@@ -45,6 +45,11 @@ namespace duatic::ethercat_interface
 
 using namespace internal::soem;  // NOLINT(build/namespaces)
 
+std::string to_string(const AlStatus& status)
+{
+  return std::string(ec_ALstatuscode2string(status));
+}
+
 enum class BusState
 {
   PreInit,
@@ -110,6 +115,26 @@ static constexpr ec_state map_to_soem_device_state(const EthercatDeviceState sta
 
     default:
       return ec_state::EC_STATE_NONE;
+  }
+}
+static constexpr EthercatDeviceState map_from_soem_device_state(const ec_state state)
+{
+  switch (state) {
+    case ec_state::EC_STATE_NONE:
+      return EthercatDeviceState::None;
+    case ec_state::EC_STATE_INIT:
+      return EthercatDeviceState::Init;
+    case ec_state::EC_STATE_PRE_OP:
+      return EthercatDeviceState::PreOp;
+    case ec_state::EC_STATE_BOOT:
+      return EthercatDeviceState::Boot;
+    case ec_state::EC_STATE_SAFE_OP:
+      return EthercatDeviceState::SafeOp;
+    case ec_state::EC_STATE_OPERATIONAL:
+      return EthercatDeviceState::Operational;
+
+    default:
+      return EthercatDeviceState::None;
   }
 }
 
@@ -848,6 +873,21 @@ struct EthercatBus::BackendImpl
     return RegisterWriteResult{ .success = wkc > 0, .working_counter = wkc };
   }
 
+  const DiagnosticsSnapshot& diagnostics(bool force_update)
+  {
+    // We allow in non operational bus state to directly obtain device and bus diagnostics
+    // This is definitely not the prefered way but necessary for some applications
+    if (force_update && get_bus_state() == BusState::Operational) {
+      throw std::runtime_error("Bus diagnostics force update may not be used why the bus is in operational state !");
+    } else if (force_update) {
+      update_diagnostics(0, 0);
+      return latest_diagnostics_;
+    } else {
+      std::lock_guard lock(diagnostics_mutex_);
+      return latest_diagnostics_;
+    }
+  }
+
 private:
   // Parameterization
   const std::string interface_;
@@ -871,6 +911,10 @@ private:
 
   logging::Logger logger_;
   DCSyncController dc_sync_;
+
+  DiagnosticsSnapshot latest_diagnostics_;
+  int current_selected_diagnostics_slave_ = 1;
+  std::mutex diagnostics_mutex_;
 
   void update_bus_state(BusState state)
   {
@@ -904,7 +948,10 @@ private:
                                   << " expected wkc: " << expected_wkc << std::endl;
       }
 
+      update_diagnostics(wkc, expected_wkc);
+
       if (params_.dc_enabled && context_.ecatSlavelist_[0].hasdc) {
+        update_rate_correction_factor = dc_sync_.update(std::chrono::nanoseconds{ context_.ecatDcTime_ });
       }
     }  // Important to unlock here, otherwise update_read() will deadlock
     // Update the pdo state of every device
@@ -912,6 +959,83 @@ private:
       device->update_read(now);
     }
     return update_rate_correction_factor;
+  }
+
+  void update_diagnostics(const int wkc, const int expected_wkc)
+  {
+    ecx_readstate(&context_.context);
+
+    // Do a best effort try to gain access to the diagnostics mutex
+    // if it doesn't work we just life with it to avoid timing issues
+    if (!diagnostics_mutex_.try_lock()) {
+      return;
+    }
+    DiagnosticsSnapshot snap = latest_diagnostics_;
+    diagnostics_mutex_.unlock();
+
+    // Update the internal diagnostics with:
+    snap.timestamp = HighPrecisionClock::now();
+
+    // Case a slave did not answer
+    if (wkc >= 0 && wkc != expected_wkc) {
+      snap.bus.wkc_mismatches += 1;
+    }
+    // Case a frame got lost or timeout or whatever
+    if (wkc < 0) {
+      snap.bus.frames_lost += 1;
+    }
+    // Simply count up how many frames we actually sent so far (PDO only)
+    snap.bus.frames_sent += 1;
+
+    if (snap.slaves.size() != context_.ecatSlavecount_) {
+      snap.slaves.resize(context_.ecatSlavecount_);
+    }
+
+    // in round robin
+    if (current_selected_diagnostics_slave_ >= context_.ecatSlavecount_) {
+      current_selected_diagnostics_slave_ = 0;
+    }
+    update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
+                                  snap.slaves[current_selected_diagnostics_slave_]);
+    current_selected_diagnostics_slave_ += 1;
+
+    // now we use the cache data we have available
+    for (int i = 0; i < context_.ecatSlavecount_; i++) {
+      snap.slaves[i].position = i + 1;
+      snap.slaves[i].al_status = context_.ecatSlavelist_[i + 1].ALstatuscode;
+      snap.slaves[i].state =
+          map_from_soem_device_state(static_cast<ec_state>(context_.ecatSlavelist_[i + 1].state & 0x0F));
+      snap.slaves[i].online = !context_.ecatSlavelist_[i + 1].islost;
+    }
+
+    {
+      std::lock_guard lock(diagnostics_mutex_);
+      latest_diagnostics_ = std::move(snap);
+    }
+  }
+
+  void update_slave_port_diagnostics(const uint16 config_adr, ESCStatus& status)
+  {
+    constexpr uint16_t DL_STATUS = 0x0110;          // 2 bytes: link/loop/comm status
+    constexpr uint16_t RX_ERROR_COUNTER = 0x0300;   // 8 bytes: 2 per port (invalid, rx err) x4
+    constexpr uint16_t LOST_LINK_COUNTER = 0x0310;  // 4 bytes: 1 per port x4
+    uint16_t dl_status = 0;
+    ecx_FPRD(&context_.ecat_port, config_adr, DL_STATUS, sizeof(dl_status), &dl_status, EC_TIMEOUTRET);
+
+    uint8_t rx_err[8] = {};
+    ecx_FPRD(&context_.ecat_port, config_adr, RX_ERROR_COUNTER, sizeof(rx_err), rx_err, EC_TIMEOUTRET);
+
+    uint8_t lost_link[4] = {};
+    ecx_FPRD(&context_.ecat_port, config_adr, LOST_LINK_COUNTER, sizeof(lost_link), lost_link, EC_TIMEOUTRET);
+
+    for (int p = 0; p < 4; ++p) {
+      // Physical link bits per port sit at bits 4-7 of DL Status.
+      // VERIFY bit layout against your ESC datasheet.
+      status.ports[p].link_up = (dl_status & (1u << (4 + p))) != 0;
+      status.ports[p].invalid_frames = rx_err[p * 2];
+      status.ports[p].rx_errors = rx_err[p * 2 + 1];
+      status.ports[p].lost_links = lost_link[p];
+    }
   }
 };
 
@@ -1208,4 +1332,8 @@ template bool EthercatBus::register_write<int64_t>(DeviceId, RegisterAddress, co
 template bool EthercatBus::register_write<float>(DeviceId, RegisterAddress, const float);
 template bool EthercatBus::register_write<double>(DeviceId, RegisterAddress, const double);
 
+const DiagnosticsSnapshot& EthercatBus::diagnostics(bool force_update)
+{
+  return impl_->diagnostics(force_update);
+}
 }  // namespace duatic::ethercat_interface

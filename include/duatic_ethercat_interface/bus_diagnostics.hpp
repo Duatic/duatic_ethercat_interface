@@ -94,7 +94,7 @@ struct BusStatus
 };
 
 // A consistent, point-in-time view of bus and slave diagnostics.
-struct Snapshot
+struct DiagnosticsSnapshot
 {
   BusStatus bus;
   std::vector<ESCStatus> slaves;
