@@ -2,7 +2,10 @@
 
 A multibackend C++20 ethercat master library.
 
-[![Humble](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-humble.yml/badge.svg?branch=main)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-humble.yml) [![Jazzy](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-jazzy.yml/badge.svg?branch=main)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-jazzy.yml)  [![Kilted](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-kilted.yml/badge.svg?branch=main)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-kilted.yml)  [![Lyrical](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-lyrical.yml/badge.svg?branch=main)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-lyrical.yml)  [![Rolling](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-rolling.yml/badge.svg?branch=main)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/build-rolling.yml)
+[![Jazzy](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/mbloechli/692205e9994655613c7c8ea8d4a38120/raw/duatic_ethercat_interface-jazzy.json)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/ci.yml)
+[![Kilted](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/mbloechli/692205e9994655613c7c8ea8d4a38120/raw/duatic_ethercat_interface-kilted.json)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/ci.yml)
+[![Lyrical](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/mbloechli/692205e9994655613c7c8ea8d4a38120/raw/duatic_ethercat_interface-lyrical.json)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/ci.yml)
+[![Rolling](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/mbloechli/692205e9994655613c7c8ea8d4a38120/raw/duatic_ethercat_interface-rolling.json)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/ci.yml)
 
 This library supports different ethercat master library backends depending on the users need.
 
