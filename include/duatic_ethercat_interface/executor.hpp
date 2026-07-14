@@ -37,40 +37,25 @@ namespace duatic::ethercat_interface
 
 struct ExecutorParameters
 {
-  // Update step rate in nanoseconds (default 1kHz)
-  std::chrono::nanoseconds update_rate{ 1000000 };
-
   // priority and desired cpu core for the update thread
   int realtime_priority{ 60 };
   int desired_cpu_core{ -1 };
 };
 
 /**
- * @brief SingleThreadedExecutor - an executor which performs the rate limited update of one or more ethercat bus
+ * @brief SingleBusExecutor - an executor which performs the rate limited update on one bus
  * objects
- * @note All busses are spun with the same update rate
  */
-class SingleThreadedExecutor
+class SingleBusExecutor
 {
 public:
-  explicit SingleThreadedExecutor(const ExecutorParameters& params = ExecutorParameters{})
-    : params_(params), update_rate_(params.update_rate)
+  explicit SingleBusExecutor(std::shared_ptr<EthercatBus>& bus, const ExecutorParameters& params = ExecutorParameters{})
+    : bus_(bus), params_(params), update_rate_(bus->get_parameters().dc_cycle_time)
   {
   }
-  ~SingleThreadedExecutor()
+  ~SingleBusExecutor()
   {
     stop();
-  }
-  /**
-   * @brief add_bus - Add a bus object to the list of busses which is handled by this exector
-   * @note After calling spin you cannot add additional bus objects anymore
-   */
-  void add_bus(std::shared_ptr<EthercatBus>& bus)
-  {
-    if (spinning_) {
-      throw ExecutorError("Executor already spinning - cannot add additional bus");
-    }
-    busses_.push_back(bus);
   }
   /**
    * @brief spin - Start to spin (call update) on all given bus instances
@@ -84,21 +69,21 @@ public:
     spinning_ = true;
     update_thread_ = std::jthread([&](std::stop_token stoken) {
       if (!set_realtime_priority(params_.realtime_priority, params_.desired_cpu_core)) {
-        logging::error("Failed to set realtime priority of spin thread - run a root or configure security.limits");
+        logging::error("Failed to set realtime priority of spin thread - run as root or configure security.limits");
       }
       while (!stoken.stop_requested()) {
-        for (auto& bus : busses_) {
-          bus->update();
-        }
-        if (this->update_rate_.step()) {
+        // In case the distributed clock is enabled we can synchronize our clock accordingly
+        // The bus reports an offset we then feed into the PrecisionUpdateRate
+        // In case dc is disabled std::nullopt is returned
+        const auto dc_correction_offset = bus_->update();
+
+        if (this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
           logging::warning() << "Could not keep update rate: " << this->update_rate_.accumulated_delay_ns()
                              << std::endl;
         }
       }
 
-      for (auto& bus : busses_) {
-        bus->shutdown();
-      }
+      bus_->shutdown();
     });
   }
   /**
@@ -114,8 +99,8 @@ public:
   }
 
 private:
+  std::shared_ptr<EthercatBus> bus_;
   const ExecutorParameters params_;
-  std::vector<std::shared_ptr<EthercatBus>> busses_;
   std::jthread update_thread_;
   PrecisionUpdateRate update_rate_;
   bool spinning_{ false };

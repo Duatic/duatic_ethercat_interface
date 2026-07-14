@@ -33,7 +33,7 @@
 
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 #include "duatic_ethercat_interface/types.hpp"
-#include "duatic_ethercat_interface/ethercat_device_state.hpp"
+#include "duatic_ethercat_interface/bus_diagnostics.hpp"
 
 namespace duatic::ethercat_interface
 {
@@ -52,6 +52,13 @@ public:
   {
     // Name of the ethernet interface
     std::string interface;
+
+    // distributed clock configuration
+    bool dc_enabled{ false };
+    std::chrono::nanoseconds dc_cycle_time{};
+    std::chrono::nanoseconds dc_sync0_shift{};
+    std::chrono::nanoseconds dc_sync1_shift{};
+    std::chrono::nanoseconds master_send_offset{};
   };
 
   explicit EthercatBus(const Parameters& params);
@@ -105,8 +112,9 @@ public:
   /**
    * @brief update - perform a single bus update step
    * @note thread safe
+   * @return correction factor for update rate in case DC sync is active
    */
-  void update();
+  std::optional<std::chrono::nanoseconds> update();
 
   /**
    * @brief attach_device - let this bus instance handle the specific ethercat device.
@@ -239,6 +247,14 @@ public:
   std::optional<T> register_read(const DeviceId device_id, const RegisterAddress address, bool check_size = true);
   template <typename T>
   bool register_write(const DeviceId device_id, const RegisterAddress address, const T data);
+
+  /**
+   * @brief diagnostics - obtain a diagnostics snapshot of the current bus state
+   * These are mostly accumulated diagnostics data
+   * @param force_update - instead of obtaining a passive diagnostics snapshop actively read diagnostics now
+   * @note only threadsafe if force_update = false
+   */
+  const DiagnosticsSnapshot& diagnostics(bool force_update = false);
 
   /**
    * @brief list_interface - provide a list with all supported interface names

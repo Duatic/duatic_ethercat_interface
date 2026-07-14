@@ -90,8 +90,7 @@ int main(void)
   bus->activate();
 
   // Executor pattern as we know it from ros (2nd thread)
-  SingleThreadedExecutor executor;
-  executor.add_bus(bus);
+  SingleBusExecutor executor{ bus };
   executor.spin();
 
   // OR
