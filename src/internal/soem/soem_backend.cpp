@@ -32,7 +32,7 @@
 
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/ethercat_device.hpp"
-#include "duatic_ethercat_interface/precision_update_rate.hpp"
+#include "duatic_ethercat_interface/distributed_clock_sync.hpp"
 
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 
@@ -116,7 +116,9 @@ static constexpr ec_state map_to_soem_device_state(const EthercatDeviceState sta
 struct EthercatBus::BackendImpl
 {
   explicit BackendImpl(const Parameters& params)
-    : params_(params), logger_(logging::get_logger_with_default_sink("SOEM-Backend"))
+    : params_(params)
+    , logger_(logging::get_logger_with_default_sink("SOEM-Backend"))
+    , dc_sync_(params.dc_cycle_time, params_.master_send_offset)
   {
   }
   ~BackendImpl()
@@ -447,12 +449,19 @@ struct EthercatBus::BackendImpl
     const int final_iomap_size = ecx_config_map_group(&context_.context, io_map_.data(), 0);
     logging::info(logger_) << "IOMap size: " << final_iomap_size << std::endl;
     ecx_configdc(&context_.context);
-    update_bus_state(BusState::Configured);
 
     // Setup distributed clock
-    if(params_.dc_enabled){
-      ecx_configdc(&context_.context);
+    if (params_.dc_enabled) {
+      for (int i = 1; i < context_.ecatSlavecount_; i++) {
+        if (context_.ecatSlavelist_[i].hasdc) {
+          ecx_dcsync01(&context_.context, i, true, static_cast<uint32_t>(params_.dc_cycle_time.count()),
+                       static_cast<uint32_t>(params_.dc_sync0_shift.count()),
+                       static_cast<int32_t>(params_.dc_sync1_shift.count()));
+        }
+      }
     }
+
+    update_bus_state(BusState::Configured);
 
     // Notify all devices that the pdos have now been configured
     for (auto& device : devices_) {
@@ -489,7 +498,6 @@ struct EthercatBus::BackendImpl
         throw BackendError("Device did not reach 'SAFE_OP' state - aborting activation", Backend::SOEM);
       }
     }
-
 
     // Bus is now in activated state so the update method knows that it needs to push devices into OPERATIONAL first
     update_bus_state(BusState::Activated);
@@ -551,7 +559,7 @@ struct EthercatBus::BackendImpl
   {
     return id > 0 && id <= get_device_count();
   }
-  void update()
+  std::optional<std::chrono::nanoseconds> update()
   {
     // First thing after startup is to bring the devices into operational state
     if (get_bus_state() == BusState::Activated) {
@@ -575,7 +583,7 @@ struct EthercatBus::BackendImpl
       }
     }
     // Perform the actual pdo read/write actions
-    internal_pdo_update();
+    const auto dc_sync_correction_factor = internal_pdo_update();
 
     {
       std::lock_guard<std::mutex> lock(sdo_update_mutex_);
@@ -596,6 +604,8 @@ struct EthercatBus::BackendImpl
         }
       }
     }  // lock is now released
+
+    return dc_sync_correction_factor;
   }
 
   std::vector<SDOEntry> read_od_from_device(const DeviceId device_id, bool full_read)
@@ -860,6 +870,7 @@ private:
   std::queue<SDOTransfer> sdo_transfer_queue_;
 
   logging::Logger logger_;
+  DCSyncController dc_sync_;
 
   void update_bus_state(BusState state)
   {
@@ -871,8 +882,9 @@ private:
     return state_;
   }
 
-  void internal_pdo_update()
+  std::optional<std::chrono::nanoseconds> internal_pdo_update()
   {
+    std::optional<std::chrono::nanoseconds> update_rate_correction_factor{ std::nullopt };
     // Obtain the current timestamp we stamp on the read /write times
     const auto now = std::chrono::high_resolution_clock::now();
     // Take the latest tx pdo state from every device
@@ -891,11 +903,15 @@ private:
         logging::warning(logger_) << params_.interface << " Working counter too low: " << wkc
                                   << " expected wkc: " << expected_wkc << std::endl;
       }
+
+      if (params_.dc_enabled && context_.ecatSlavelist_[0].hasdc) {
+      }
     }  // Important to unlock here, otherwise update_read() will deadlock
     // Update the pdo state of every device
     for (auto& device : devices_) {
       device->update_read(now);
     }
+    return update_rate_correction_factor;
   }
 };
 
@@ -911,10 +927,9 @@ int EthercatBus::initialize()
 {
   return impl_->initialize();
 }
-void EthercatBus::update()
+std::optional<std::chrono::nanoseconds> EthercatBus::update()
 {
-  // Only forward in case of self managed update
-  impl_->update();
+  return impl_->update();
 }
 const EthercatBus::Parameters& EthercatBus::get_parameters() const
 {

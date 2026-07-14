@@ -153,12 +153,12 @@ public:
    *
    * @return true if a timing overrun occurred (deadline was missed), false otherwise.
    */
-  bool step()
+  bool step(std::chrono::nanoseconds sync_offset = std::chrono::nanoseconds::zero())
   {
     using namespace precision_timing;  // NOLINT(build/namespaces)
 
     // advance fixed periodic deadline
-    sleep_end_ = timespec_add_ns(sleep_end_, time_step_ns_);
+    sleep_end_ = timespec_add_ns(sleep_end_, time_step_ns_ + sync_offset.count());
     last_delay_ns_ = 0;
 
     timespec now = now_monotonic();

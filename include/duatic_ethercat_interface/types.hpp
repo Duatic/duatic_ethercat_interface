@@ -305,7 +305,6 @@ inline std::ostream& operator<<(std::ostream& os, DataType type)
   }
 }
 
-
 /**
  * @brief representation of ethercat device statesoot
  */
@@ -319,18 +318,23 @@ enum class EthercatDeviceState
   Operational,
 };
 
-
 inline std::ostream& operator<<(std::ostream& os, EthercatDeviceState state)
 {
-  switch (state)
-  {
-    case EthercatDeviceState::None:        return os << "None";
-    case EthercatDeviceState::Init:        return os << "Init";
-    case EthercatDeviceState::PreOp:       return os << "PreOp";
-    case EthercatDeviceState::Boot:        return os << "Boot";
-    case EthercatDeviceState::SafeOp:      return os << "SafeOp";
-    case EthercatDeviceState::Operational: return os << "Operational";
-    default:                               return os << "Unknown";
+  switch (state) {
+    case EthercatDeviceState::None:
+      return os << "None";
+    case EthercatDeviceState::Init:
+      return os << "Init";
+    case EthercatDeviceState::PreOp:
+      return os << "PreOp";
+    case EthercatDeviceState::Boot:
+      return os << "Boot";
+    case EthercatDeviceState::SafeOp:
+      return os << "SafeOp";
+    case EthercatDeviceState::Operational:
+      return os << "Operational";
+    default:
+      return os << "Unknown";
   }
 }
 

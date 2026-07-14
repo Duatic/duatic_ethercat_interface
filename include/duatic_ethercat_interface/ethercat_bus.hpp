@@ -33,6 +33,7 @@
 
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 #include "duatic_ethercat_interface/types.hpp"
+#include "duatic_ethercat_interface/bus_diagnostics.hpp"
 
 namespace duatic::ethercat_interface
 {
@@ -53,10 +54,11 @@ public:
     std::string interface;
 
     // distributed clock configuration
-    bool dc_enabled{false};
+    bool dc_enabled{ false };
     std::chrono::nanoseconds dc_cycle_time{};
     std::chrono::nanoseconds dc_sync0_shift{};
     std::chrono::nanoseconds dc_sync1_shift{};
+    std::chrono::nanoseconds master_send_offset{};
   };
 
   explicit EthercatBus(const Parameters& params);
@@ -110,8 +112,9 @@ public:
   /**
    * @brief update - perform a single bus update step
    * @note thread safe
+   * @return correction factor for update rate in case DC sync is active
    */
-  void update();
+  std::optional<std::chrono::nanoseconds> update();
 
   /**
    * @brief attach_device - let this bus instance handle the specific ethercat device.
@@ -244,7 +247,6 @@ public:
   std::optional<T> register_read(const DeviceId device_id, const RegisterAddress address, bool check_size = true);
   template <typename T>
   bool register_write(const DeviceId device_id, const RegisterAddress address, const T data);
-
 
   /**
    * @brief list_interface - provide a list with all supported interface names
