@@ -463,16 +463,25 @@ struct EthercatBus::BackendImpl
       device->on_startup();
     }
 
-    // Perform PDO setup
-    // First determine the necessary io map size
-    const int iomap_size = ecx_config_map_group(&context_.context, NULL, 0);
-    if (iomap_size < 0) {
-      throw BackendError("IOMap size < 0 (" + std::to_string(iomap_size) + ")", Backend::SOEM);
+    // Disable symmetrical transfers.
+    /// Needs to be done before the mapping
+    if (params_.block_LRW) {
+      context_.context.grouplist[0].blockLRW = 1;
+    } else {
+      context_.context.grouplist[0].blockLRW = 0;
     }
-    io_map_.resize(static_cast<std::size_t>(iomap_size), 0);
+    // Perform PDO setup
+    // As there is no way to properly determine the pdo map size before hand we let the user
+    // externally configure the buffer size that we are using
+    io_map_.resize(params_.pdo_buffer_size, 0);
     // And then do the actual configuration
     const int final_iomap_size = ecx_config_map_group(&context_.context, io_map_.data(), 0);
     logging::info(logger_) << "IOMap size: " << final_iomap_size << std::endl;
+
+    if (final_iomap_size > params_.pdo_buffer_size) {
+      throw BackendError("Calculated pdo size is: " + std::to_string(final_iomap_size) +
+                         " whereas the configured buffer size is: " + std::to_string(params_.pdo_buffer_size));
+    }
 
     // Setup distributed clock
     if (!ecx_configdc(&context_.context)) {
@@ -795,6 +804,7 @@ struct EthercatBus::BackendImpl
 
     std::lock_guard<std::mutex> lock(pdo_update_mutex_);
     std::memcpy(result.data(), context_.ecatSlavelist_[device_id].inputs, size);
+
     return result;
   }
 
@@ -961,7 +971,7 @@ private:
 
       expected_wkc = context_.context.grouplist[0].outputsWKC * 2 + context_.context.grouplist[0].inputsWKC;
       if (wkc < expected_wkc) {
-        logging::warning(logger_) << params_.interface << " Working counter too low: " << wkc
+        logging::warning(logger_) << params_.interface << " Working counter too low (pdo): " << wkc
                                   << " expected wkc: " << expected_wkc << std::endl;
       }
       // Run DC clock pi controller to calculate a correction factor which then can be used by executor to shift the

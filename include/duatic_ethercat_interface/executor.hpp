@@ -51,7 +51,7 @@ class SingleBusExecutor
 {
 public:
   explicit SingleBusExecutor(std::shared_ptr<EthercatBus>& bus, const ExecutorParameters& params = ExecutorParameters{})
-    : bus_(bus), params_(params), update_rate_(bus->get_parameters().dc_cycle_time)
+    : bus_(bus), params_(params), update_rate_(bus->get_parameters().dc_cycle_time), logger_(logging::get_logger_with_default_sink("SingleBusExecutor"))
   {
   }
   ~SingleBusExecutor()
@@ -67,6 +67,8 @@ public:
     if (spinning_) {
       throw ExecutorError("Executor already spinning");
     }
+    logging::info(logger_) << "Setting up Executor with update frequency: " << 1.0/std::chrono::duration_cast<std::chrono::duration<double>>(bus_->get_parameters().dc_cycle_time).count() << "Hz" << std::endl;
+
     spinning_ = true;
     update_thread_ = std::jthread([&](std::stop_token stoken) {
       if (!set_realtime_priority(params_.realtime_priority, params_.desired_cpu_core)) {
@@ -78,8 +80,8 @@ public:
         // In case dc is disabled std::nullopt is returned
         const auto dc_correction_offset = bus_->update();
 
-        if (this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
-          logging::warning() << "Could not keep update rate: " << this->update_rate_.accumulated_delay_ns()
+        if (!this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
+          logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns()
                              << std::endl;
         }
       }
@@ -113,6 +115,7 @@ public:
   }
 
 private:
+logging::Logger logger_;
   std::shared_ptr<EthercatBus> bus_;
   const ExecutorParameters params_;
   std::jthread update_thread_;
