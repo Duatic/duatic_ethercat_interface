@@ -877,7 +877,7 @@ struct EthercatBus::BackendImpl
     return RegisterWriteResult{ .success = wkc > 0, .working_counter = wkc };
   }
 
-  const DiagnosticsSnapshot& diagnostics(bool force_update)
+  DiagnosticsSnapshot diagnostics(bool force_update)
   {
     // We allow in non operational bus state to directly obtain device and bus diagnostics
     // This is definitely not the prefered way but necessary for some applications
@@ -1344,7 +1344,7 @@ template bool EthercatBus::register_write<int64_t>(DeviceId, RegisterAddress, co
 template bool EthercatBus::register_write<float>(DeviceId, RegisterAddress, const float);
 template bool EthercatBus::register_write<double>(DeviceId, RegisterAddress, const double);
 
-const DiagnosticsSnapshot& EthercatBus::diagnostics(bool force_update)
+DiagnosticsSnapshot EthercatBus::diagnostics(bool force_update)
 {
   return impl_->diagnostics(force_update);
 }

@@ -253,7 +253,7 @@ public:
    * @param force_update - instead of obtaining a passive diagnostics snapshop actively read diagnostics now
    * @note only threadsafe if force_update = false
    */
-  const DiagnosticsSnapshot& diagnostics(bool force_update = false);
+  DiagnosticsSnapshot diagnostics(bool force_update = false);
 
   /**
    * @brief list_interface - provide a list with all supported interface names
