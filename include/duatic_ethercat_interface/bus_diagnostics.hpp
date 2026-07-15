@@ -121,14 +121,29 @@ struct BusStatus
   uint64_t wkc_mismatches = 0;
 };
 
+// Executor diagnostics which is added by the executor to a diagnostics snapshot
+struct ExecutionStatus
+{
+  // Indicate whether the executor is currently running
+  bool spin_thread_running = false;
+  // Amount of missed timing deadlines
+  uint64_t missed_rate_steps = 0;
+  // Total accumulated delay of the executor
+  std::chrono::nanoseconds accumulated_delay;
+};
+
 // A consistent, point-in-time view of bus and slave diagnostics.
 struct DiagnosticsSnapshot
 {
   BusStatus bus;
   std::vector<ESCStatus> slaves;
 
+  // Additional information added by the executor if the DiagnosticsSnapshot was obtained from the executor
+  // Otherwise this field will be empty
+  std::optional<ExecutionStatus> executor;
   // Time this snapshot was captured, using a monotonic clock — suitable
   // for measuring elapsed time between snapshots, not wall-clock display.
   HighPrecisionTimeStamp timestamp;
 };
+
 }  // namespace duatic::ethercat_interface

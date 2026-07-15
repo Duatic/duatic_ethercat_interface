@@ -298,6 +298,8 @@ TEST_F(PrecisionUpdateRateTest, MicrosecondPrecision)
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
   EXPECT_GE(elapsed.count(), 98);
   EXPECT_LE(elapsed.count(), 102);
+
+  std::cout << elapsed.count() << std::endl;
 }
 
 // Test overrun detection accuracy

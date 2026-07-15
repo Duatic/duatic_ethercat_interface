@@ -226,7 +226,7 @@ struct EthercatBus::BackendImpl
       int actual_size = requested_size;
       const int wkc =
           ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
-      if (wkc <= 0) {
+      if (wkc < 0) {
         logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                                 << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                                 << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
@@ -295,7 +295,7 @@ struct EthercatBus::BackendImpl
       const int wkc =
           ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
       SDOReadResult result{};
-      if (wkc <= 0) {
+      if (wkc < 0) {
         logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                                 << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                                 << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
@@ -364,7 +364,7 @@ struct EthercatBus::BackendImpl
       // Directly perform the write
       const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, static_cast<int>(data.size()),
                                    const_cast<uint8_t*>(data.data()), timeout);
-      if (wkc <= 0) {
+      if (wkc < 0) {
         logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                                 << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                                 << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
@@ -416,7 +416,7 @@ struct EthercatBus::BackendImpl
       const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, static_cast<int>(data.size()),
                                    const_cast<uint8_t*>(data.data()), timeout);
       SDOWriteResult result{};
-      if (wkc <= 0) {
+      if (wkc < 0) {
         logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                                 << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                                 << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
@@ -477,11 +477,10 @@ struct EthercatBus::BackendImpl
 
     // Setup distributed clock
     if (params_.dc_enabled) {
-      for (int i = 1; i < context_.ecatSlavecount_; i++) {
+      for (uint16_t i = 1; i <= static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
         if (context_.ecatSlavelist_[i].hasdc) {
-          ecx_dcsync01(&context_.context, i, true, static_cast<uint32_t>(params_.dc_cycle_time.count()),
-                       static_cast<uint32_t>(params_.dc_sync0_shift.count()),
-                       static_cast<int32_t>(params_.dc_sync1_shift.count()));
+          ecx_dcsync0(&context_.context, i, true, static_cast<uint32_t>(params_.dc_cycle_time.count()),
+                      static_cast<int32_t>(params_.dc_sync0_shift.count()));
         }
       }
     }
@@ -617,6 +616,11 @@ struct EthercatBus::BackendImpl
         auto transfer = sdo_transfer_queue_.front();
         sdo_transfer_queue_.pop();
 
+        // SDO Timeouts:
+        // Note that the standard SDO timeouts may block the RT update loop
+        // Nevertheless it is better to perform them at this location than having some kind of mutex
+        // lock in order to handle seperate access to the bus via SOEM
+        // if this is critical the user can pass a smaller timeout from the outside
         if (transfer.direction == SDOTransfer::Direction::Read) {
           int actual_size = transfer.data_size;
           const int wkc = ecx_SDOread(&context_.context, transfer.device_id, transfer.index, transfer.sub_index, FALSE,
@@ -913,7 +917,7 @@ private:
   DCSyncController dc_sync_;
 
   DiagnosticsSnapshot latest_diagnostics_;
-  int current_selected_diagnostics_slave_ = 1;
+  std::size_t current_selected_diagnostics_slave_ = 1;
   std::mutex diagnostics_mutex_;
 
   void update_bus_state(BusState state)
@@ -935,29 +939,37 @@ private:
     for (auto& device : devices_) {
       device->update_write(now);
     }
+
+    // Stored outside the lock block so that the diagnostics can access it
+    int wkc{ 0 };
+    int expected_wkc{ 0 };
+
     {  // Important to lock after update_write(), otherwise update_write will deadlock
       std::lock_guard<std::mutex> lock(pdo_update_mutex_);
       if (ecx_send_processdata(&context_.context) <= 0) {
         logging::error(logger_) << "Failed to send process data" << std::endl;
       }
-      const int wkc = ecx_receive_processdata(&context_.context, EC_TIMEOUTRET);
+      wkc = ecx_receive_processdata(&context_.context, EC_TIMEOUTRET);
 
-      const int expected_wkc = context_.context.grouplist[0].outputsWKC * 2 + context_.context.grouplist[0].inputsWKC;
+      expected_wkc = context_.context.grouplist[0].outputsWKC * 2 + context_.context.grouplist[0].inputsWKC;
       if (wkc < expected_wkc) {
         logging::warning(logger_) << params_.interface << " Working counter too low: " << wkc
                                   << " expected wkc: " << expected_wkc << std::endl;
       }
-
-      update_diagnostics(wkc, expected_wkc);
-
+      // Run DC clock pi controller to calculate a correction factor which then can be used by executor to shift the
+      // update rate
       if (params_.dc_enabled && context_.ecatSlavelist_[0].hasdc) {
         update_rate_correction_factor = dc_sync_.update(std::chrono::nanoseconds{ context_.ecatDcTime_ });
       }
     }  // Important to unlock here, otherwise update_read() will deadlock
+
     // Update the pdo state of every device
     for (auto& device : devices_) {
       device->update_read(now);
     }
+
+    // Try to create a diagnostics snapshot
+    update_diagnostics(wkc, expected_wkc);
     return update_rate_correction_factor;
   }
 
@@ -987,12 +999,12 @@ private:
     // Simply count up how many frames we actually sent so far (PDO only)
     snap.bus.frames_sent += 1;
 
-    if (snap.slaves.size() != context_.ecatSlavecount_) {
-      snap.slaves.resize(context_.ecatSlavecount_);
+    if (snap.slaves.size() != static_cast<std::size_t>(context_.ecatSlavecount_)) {
+      snap.slaves.resize(static_cast<std::size_t>(context_.ecatSlavecount_));
     }
 
     // in round robin
-    if (current_selected_diagnostics_slave_ >= context_.ecatSlavecount_) {
+    if (current_selected_diagnostics_slave_ >= static_cast<std::size_t>(context_.ecatSlavecount_)) {
       current_selected_diagnostics_slave_ = 0;
     }
     update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
@@ -1000,7 +1012,7 @@ private:
     current_selected_diagnostics_slave_ += 1;
 
     // now we use the cache data we have available
-    for (int i = 0; i < context_.ecatSlavecount_; i++) {
+    for (uint16_t i = 0; i < static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
       snap.slaves[i].position = i + 1;
       snap.slaves[i].al_status = context_.ecatSlavelist_[i + 1].ALstatuscode;
       snap.slaves[i].state =
@@ -1028,7 +1040,7 @@ private:
     uint8_t lost_link[4] = {};
     ecx_FPRD(&context_.ecat_port, config_adr, LOST_LINK_COUNTER, sizeof(lost_link), lost_link, EC_TIMEOUTRET);
 
-    for (int p = 0; p < 4; ++p) {
+    for (std::size_t p = 0; p < 4; ++p) {
       // Physical link bits per port sit at bits 4-7 of DL Status.
       // VERIFY bit layout against your ESC datasheet.
       status.ports[p].link_up = (dl_status & (1u << (4 + p))) != 0;

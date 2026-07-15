@@ -31,6 +31,7 @@
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/realtime_utils.hpp"
 #include "duatic_ethercat_interface/ethercat_bus.hpp"
+#include "duatic_ethercat_interface/bus_diagnostics.hpp"
 
 namespace duatic::ethercat_interface
 {
@@ -96,6 +97,19 @@ public:
       update_thread_.join();
     }
     spinning_ = false;
+  }
+
+  /**
+   * @brief full_diagnostics - obtain a full diagnostics snapshot of the ethercat bus and icnlude executor diagnostics
+   * @note see @ref EthercatBus::diagnostics for parameter meaning
+   */
+  DiagnosticsSnapshot full_diagnostics(bool force_update = false)
+  {
+    auto snapshot = bus_->diagnostics(force_update);
+    snapshot.executor = ExecutionStatus{ .spin_thread_running = spinning_,
+                                         .missed_rate_steps = this->update_rate_.overrun_count(),
+                                         .accumulated_delay = this->update_rate_.accumulated_delay_ns() };
+    return snapshot;
   }
 
 private:

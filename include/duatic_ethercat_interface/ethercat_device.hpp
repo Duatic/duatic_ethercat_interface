@@ -332,9 +332,9 @@ public:
   TXPDO get_tx_pdo() const
   {
     static_assert(std::is_trivially_copyable_v<TXPDO>);
-    if (sizeof(TXPDO) != rx_pdo_.size()) {
+    if (sizeof(TXPDO) != tx_pdo_.size()) {
       throw DeviceConfigurationError("TXPDO size (" + std::to_string(sizeof(TXPDO)) +
-                                     ") does not match configured size (" + std::to_string(rx_pdo_.size()) + ")");
+                                     ") does not match configured size (" + std::to_string(tx_pdo_.size()) + ")");
     }
     // TODO get rid of copy
     const auto generic = get_generic_tx_pdo();

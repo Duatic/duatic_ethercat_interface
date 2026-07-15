@@ -57,7 +57,6 @@ public:
     bool dc_enabled{ false };
     std::chrono::nanoseconds dc_cycle_time{};
     std::chrono::nanoseconds dc_sync0_shift{};
-    std::chrono::nanoseconds dc_sync1_shift{};
     std::chrono::nanoseconds master_send_offset{};
   };
 
