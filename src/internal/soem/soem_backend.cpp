@@ -473,9 +473,17 @@ struct EthercatBus::BackendImpl
     // And then do the actual configuration
     const int final_iomap_size = ecx_config_map_group(&context_.context, io_map_.data(), 0);
     logging::info(logger_) << "IOMap size: " << final_iomap_size << std::endl;
-    ecx_configdc(&context_.context);
 
     // Setup distributed clock
+    if (!ecx_configdc(&context_.context)) {
+      if (params_.dc_enabled) {
+        logger_.error("No devices with DC support found on the bus");
+        throw BackendError("No devices wiht DC support found on the bus but DC sync is enabled");
+      } else {
+        logger_.info("No devices with DC support found on the bus");
+      }
+    }
+    // Setup dc sync (NOTE we only support sync0 at the moment)
     if (params_.dc_enabled) {
       for (uint16_t i = 1; i <= static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
         if (context_.ecatSlavelist_[i].hasdc) {
@@ -901,7 +909,7 @@ private:
   EthercatContext context_;
   // Memory where SOEM will store its pdos aftwards
   std::vector<uint8_t> io_map_;
-  BusState state_{ BusState::PreInit };
+  std::atomic<BusState> state_{ BusState::PreInit };
 
   // Device management
   std::vector<std::shared_ptr<EthercatDeviceBase>> devices_;
