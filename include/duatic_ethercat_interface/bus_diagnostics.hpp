@@ -132,7 +132,7 @@ struct ExecutionStatus
   std::chrono::nanoseconds accumulated_delay;
 
   // Average update rate in hz
-  double average_update_rate_Hz{0};
+  double average_update_rate_Hz{ 0 };
   // Last point in the the bus update was called
   HighPrecisionTimeStamp last_update_tp;
 };

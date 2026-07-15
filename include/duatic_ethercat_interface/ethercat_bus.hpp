@@ -52,9 +52,9 @@ public:
   {
     // Name of the ethernet interface
     std::string interface;
-    std::size_t pdo_buffer_size{4096};
+    std::size_t pdo_buffer_size{ 4096 };
     // Enable or disable symmetrical transfers
-    bool block_LRW{true}; 
+    bool block_LRW{ true };
 
     // distributed clock configuration
     bool dc_enabled{ false };
