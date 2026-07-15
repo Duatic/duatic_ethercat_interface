@@ -130,6 +130,11 @@ struct ExecutionStatus
   uint64_t missed_rate_steps = 0;
   // Total accumulated delay of the executor
   std::chrono::nanoseconds accumulated_delay;
+
+  // Average update rate in hz
+  double average_update_rate_Hz{0};
+  // Last point in the the bus update was called
+  HighPrecisionTimeStamp last_update_tp;
 };
 
 // A consistent, point-in-time view of bus and slave diagnostics.

@@ -1025,7 +1025,7 @@ private:
     if (current_selected_diagnostics_slave_ >= static_cast<std::size_t>(context_.ecatSlavecount_)) {
       current_selected_diagnostics_slave_ = 0;
     }
-    update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
+    /*update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
                                   snap.slaves[current_selected_diagnostics_slave_]);
     current_selected_diagnostics_slave_ += 1;
 
@@ -1036,7 +1036,7 @@ private:
       snap.slaves[i].state =
           map_from_soem_device_state(static_cast<ec_state>(context_.ecatSlavelist_[i + 1].state & 0x0F));
       snap.slaves[i].online = !context_.ecatSlavelist_[i + 1].islost;
-    }
+    }*/
 
     {
       std::lock_guard lock(diagnostics_mutex_);

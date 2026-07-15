@@ -51,7 +51,10 @@ class SingleBusExecutor
 {
 public:
   explicit SingleBusExecutor(std::shared_ptr<EthercatBus>& bus, const ExecutorParameters& params = ExecutorParameters{})
-    : bus_(bus), params_(params), update_rate_(bus->get_parameters().dc_cycle_time), logger_(logging::get_logger_with_default_sink("SingleBusExecutor"))
+    : bus_(bus)
+    , params_(params)
+    , update_rate_(bus->get_parameters().dc_cycle_time)
+    , logger_(logging::get_logger_with_default_sink("SingleBusExecutor"))
   {
   }
   ~SingleBusExecutor()
@@ -67,7 +70,11 @@ public:
     if (spinning_) {
       throw ExecutorError("Executor already spinning");
     }
-    logging::info(logger_) << "Setting up Executor with update frequency: " << 1.0/std::chrono::duration_cast<std::chrono::duration<double>>(bus_->get_parameters().dc_cycle_time).count() << "Hz" << std::endl;
+    logging::info(logger_) << "Setting up Executor with update frequency: "
+                           << 1.0 / std::chrono::duration_cast<std::chrono::duration<double>>(
+                                        bus_->get_parameters().dc_cycle_time)
+                                        .count()
+                           << "Hz" << std::endl;
 
     spinning_ = true;
     update_thread_ = std::jthread([&](std::stop_token stoken) {
@@ -75,14 +82,20 @@ public:
         logging::error("Failed to set realtime priority of spin thread - run as root or configure security.limits");
       }
       while (!stoken.stop_requested()) {
+        // Do update rate tracking
+        const auto now = HighPrecisionClock::now();
+        const auto update_rate =
+            std::chrono::duration_cast<std::chrono::duration<double>>(now - last_update_tp_).count();
+        average_update_rate_Hz_ = 0.5 * update_rate + 0.5 * average_update_rate_Hz_;
+        last_update_tp_ = now;
         // In case the distributed clock is enabled we can synchronize our clock accordingly
         // The bus reports an offset we then feed into the PrecisionUpdateRate
         // In case dc is disabled std::nullopt is returned
         const auto dc_correction_offset = bus_->update();
 
-        if (!this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
+        if (this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
           logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns()
-                             << std::endl;
+                                    << std::endl;
         }
       }
 
@@ -110,16 +123,21 @@ public:
     auto snapshot = bus_->diagnostics(force_update);
     snapshot.executor = ExecutionStatus{ .spin_thread_running = spinning_,
                                          .missed_rate_steps = this->update_rate_.overrun_count(),
-                                         .accumulated_delay = this->update_rate_.accumulated_delay_ns() };
+                                         .accumulated_delay = this->update_rate_.accumulated_delay_ns(),
+                                         .average_update_rate_Hz = average_update_rate_Hz_,
+                                         .last_update_tp = last_update_tp_ };
     return snapshot;
   }
 
 private:
-logging::Logger logger_;
+  logging::Logger logger_;
   std::shared_ptr<EthercatBus> bus_;
   const ExecutorParameters params_;
   std::jthread update_thread_;
   PrecisionUpdateRate update_rate_;
   bool spinning_{ false };
+
+  HighPrecisionClock::time_point last_update_tp_;
+  double average_update_rate_Hz_{ 0.0 };
 };
 }  // namespace duatic::ethercat_interface
