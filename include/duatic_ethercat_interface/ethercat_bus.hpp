@@ -66,6 +66,10 @@ public:
     // Time to wait for all devices to reach operational state
     // A value of 0 will disable the timeout
     std::chrono::milliseconds timeout_transition_operational{ 1000 };
+
+    // read per port stats from each ethercat device
+    // This has a high timing inpact and this therefore disabled by default
+    bool enable_port_diagnostics{false};
   };
 
   explicit EthercatBus(const Parameters& params);

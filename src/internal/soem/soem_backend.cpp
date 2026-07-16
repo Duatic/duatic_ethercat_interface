@@ -557,16 +557,18 @@ struct EthercatBus::BackendImpl
     update_bus_state(BusState::Activated);
 
     // Start the slow diagnostics update thread
-    slow_diagnostics_thread_ = std::make_unique<std::jthread>([this](std::stop_token st) {
-      std::mutex m;
-      std::condition_variable_any cv;
-      std::unique_lock lk(m);
+    if (params_.enable_port_diagnostics) {
+      slow_diagnostics_thread_ = std::make_unique<std::jthread>([this](std::stop_token st) {
+        std::mutex m;
+        std::condition_variable_any cv;
+        std::unique_lock lk(m);
 
-      while (!st.stop_requested()) {
-        update_diagnostics_slow();
-        cv.wait_for(lk, st, std::chrono::milliseconds(200), [] { return false; });
-      }
-    });
+        while (!st.stop_requested()) {
+          update_diagnostics_slow();
+          cv.wait_for(lk, st, std::chrono::milliseconds(200), [] { return false; });
+        }
+      });
+    }
 
     // Give the devices the chance to perfrom any last steps before the operational stage starts
     for (auto& device : devices_) {
@@ -990,6 +992,7 @@ private:
   // Diagnostics
   DiagnosticsSnapshot latest_diagnostics_;
   std::size_t current_selected_diagnostics_slave_ = 0;  // note this is starting at 0 (not device id index based)
+  std::size_t diagnostics_state_update_divider_ = 0;
   std::mutex diagnostics_mutex_;
   std::unique_ptr<std::jthread> slow_diagnostics_thread_;
 
@@ -1048,7 +1051,10 @@ private:
 
   void update_diagnostics_fast(const int wkc, const int expected_wkc)
   {
-    ecx_readstate(&context_.context);
+    if (diagnostics_state_update_divider_ >= 10) {
+      diagnostics_state_update_divider_ = 0;
+      ecx_readstate(&context_.context);
+    }
     // Do a best effort try to gain access to the diagnostics mutex
     // if it doesn't work we just life with it to avoid timing issues
     if (!diagnostics_mutex_.try_lock()) {
@@ -1101,6 +1107,7 @@ private:
     }
     update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
                                   snap.slaves[current_selected_diagnostics_slave_]);
+    snap.slaves[current_selected_diagnostics_slave_].ports_update_timestamp = HighPrecisionClock::now();
     current_selected_diagnostics_slave_ += 1;
 
     {
