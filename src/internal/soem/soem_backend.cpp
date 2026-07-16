@@ -45,6 +45,7 @@ namespace duatic::ethercat_interface
 
 using namespace internal::soem;  // NOLINT(build/namespaces)
 
+// Helper function to convert the AlStatus into a human readable string
 std::string to_string(const AlStatus& status)
 {
   return std::string(ec_ALstatuscode2string(status));
@@ -866,7 +867,7 @@ struct EthercatBus::BackendImpl
     return RegisterReadResult{
       .success = wkc > 0,
       .working_counter = wkc,
-      .actual_read_size = size,
+      .actual_size_read = size,
       .data = data,
     };
   }
@@ -952,7 +953,7 @@ private:
   {
     std::optional<std::chrono::nanoseconds> update_rate_correction_factor{ std::nullopt };
     // Obtain the current timestamp we stamp on the read /write times
-    const auto now = std::chrono::high_resolution_clock::now();
+    const auto now = HighPrecisionClock::now();
     // Take the latest tx pdo state from every device
     for (auto& device : devices_) {
       device->update_write(now);

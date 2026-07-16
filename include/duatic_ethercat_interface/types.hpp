@@ -31,19 +31,117 @@
 #include <iomanip>
 #include <string>
 #include <chrono>
+#include <sstream>
+
 namespace duatic::ethercat_interface
 {
+// Timing types used within the ethercat sdk
+using StandardClock = std::chrono::system_clock;
+using StandardTimeStamp = std::chrono::system_clock::time_point;
 
-using TimeStamp = std::chrono::system_clock::time_point;
-using HighPrecisionClock = std::chrono::high_resolution_clock;
-using HighPrecisionTimeStamp = std::chrono::high_resolution_clock::time_point;
+using HighPrecisionClock = std::chrono::steady_clock;
+using HighPrecisionTimeStamp = std::chrono::steady_clock::time_point;
 
+// General ethercat types
 using DeviceId = uint16_t;
-using SDOIndex = uint16_t;
-using SDOSubIndex = uint8_t;
+constexpr std::size_t maximum_visible_string_size = 255;
+
+// Always available information in an ethercat device
+struct DeviceInfo
+{
+  DeviceId id;
+  std::string name;
+  uint32_t vendor_id;
+  uint32_t product_id;
+  uint32_t revision;
+  bool has_dc;
+};
+inline std::string to_string(const DeviceInfo& device)
+{
+  std::ostringstream os;
+
+  os << "DeviceInfo{\n"
+     << "  id: " << static_cast<int>(device.id) << ",\n"
+     << "  name: \"" << device.name << "\",\n"
+     << "  vendor_id: 0x" << std::hex << std::uppercase << device.vendor_id << ",\n"
+     << "  product_id: 0x" << device.product_id << ",\n"
+     << "  revision: 0x" << device.revision << ",\n"
+     << "  has_dc: " << std::boolalpha << device.has_dc << "\n"
+     << "}";
+
+  return os.str();
+}
+
+inline std::ostream& operator<<(std::ostream& os, const DeviceInfo& device)
+{
+  return os << to_string(device);
+}
+
+// Representation of ethercat device states
+enum class EthercatDeviceState
+{
+  None,
+  Init,
+  PreOp,
+  Boot,
+  SafeOp,
+  Operational,
+};
+
+inline std::string to_string(const EthercatDeviceState state)
+{
+  switch (state) {
+    case EthercatDeviceState::None:
+      return "None";
+    case EthercatDeviceState::Init:
+      return "Init";
+    case EthercatDeviceState::PreOp:
+      return "PreOp";
+    case EthercatDeviceState::Boot:
+      return "Boot";
+    case EthercatDeviceState::SafeOp:
+      return "SafeOp";
+    case EthercatDeviceState::Operational:
+      return "Operational";
+  }
+  return "Invalid (" + std::to_string(static_cast<int>(state)) + ")";
+}
+
+inline std::ostream& operator<<(std::ostream& os, const EthercatDeviceState state)
+{
+  return os << to_string(state);
+}
+
+// Ethercat Register access types
 using RegisterAddress = uint16_t;
 
-constexpr std::size_t maximum_visible_string_size = 255;
+// Types for Ethercat Register interactions
+struct RegisterWriteResult
+{
+  bool success{ false };
+  int working_counter{ 0 };
+
+  explicit operator bool() const
+  {
+    return success;
+  }
+};
+struct RegisterReadResult
+{
+  bool success{ false };
+  int working_counter{ 0 };
+  std::size_t actual_size_read{ 0 };
+  std::span<const uint8_t> data{};
+
+  explicit operator bool() const
+  {
+    return success;
+  }
+};
+
+// CoE types
+using SDOIndex = uint16_t;
+using SDOSubIndex = uint8_t;
 
 // Types for SDO (ServiceDataObject) interactions
 struct SDOReadResult
@@ -52,7 +150,7 @@ struct SDOReadResult
   int actual_size_read{ 0 };
   int working_counter{ 0 };
 
-  operator bool() const
+  explicit operator bool() const
   {
     return success;
   }
@@ -63,55 +161,7 @@ struct SDOWriteResult
   bool success{ false };
   int working_counter{ 0 };
 
-  operator bool() const
-  {
-    return success;
-  }
-};
-
-// Types for FileOverEthercat interactions
-struct FoEWriteResult
-{
-  bool success{ false };
-  int working_counter{ 0 };
-
-  operator bool() const
-  {
-    return success;
-  }
-};
-struct FoEReadResult
-{
-  bool success{ false };
-  int working_counter{ 0 };
-  std::size_t actual_read_size{ 0 };
-  std::span<const uint8_t> data{};
-
-  operator bool() const
-  {
-    return success;
-  }
-};
-
-// Types for Ethercat Register interactions
-struct RegisterWriteResult
-{
-  bool success{ false };
-  int working_counter{ 0 };
-
-  operator bool() const
-  {
-    return success;
-  }
-};
-struct RegisterReadResult
-{
-  bool success{ false };
-  int working_counter{ 0 };
-  std::size_t actual_read_size{ 0 };
-  std::span<const uint8_t> data{};
-
-  operator bool() const
+  explicit operator bool() const
   {
     return success;
   }
@@ -121,6 +171,7 @@ using SDOReadCallback = std::function<void(std::span<const uint8_t>, const Devic
                                            const SDOReadResult&)>;
 using SDOWriteCallback = std::function<void(const DeviceId, const SDOIndex, const SDOSubIndex, const SDOWriteResult&)>;
 
+// Representation of various types of SDO object codes
 enum class SDOObjectCode : uint8_t
 {
   Var = 0x07,
@@ -128,6 +179,24 @@ enum class SDOObjectCode : uint8_t
   Record = 0x09
 };
 
+inline std::string to_string(const SDOObjectCode code)
+{
+  switch (code) {
+    case SDOObjectCode::Var:
+      return "Var";
+    case SDOObjectCode::Array:
+      return "Array";
+    case SDOObjectCode::Record:
+      return "Record";
+  }
+  return "Invalid (" + std::to_string(static_cast<int>(code)) + ")";
+}
+inline std::ostream& operator<<(std::ostream& os, const SDOObjectCode code)
+{
+  return os << to_string(code);
+}
+
+// Reprensation of supported data types
 enum class DataType : uint16_t
 {
   UNKNOWN = 0x0000,
@@ -172,170 +241,109 @@ enum class DataType : uint16_t
   BIT8 = 0x0037,
 };
 
-struct DeviceInfo
-{
-  DeviceId id;
-  std::string name;
-  uint32_t vendor_id;
-  uint32_t product_id;
-  uint32_t revision;
-  bool has_dc;
-};
-
-inline std::ostream& operator<<(std::ostream& os, const DeviceInfo& device)
-{
-  auto flags = os.flags();
-
-  os << "DeviceInfo{\n"
-     << "  id: " << static_cast<int>(device.id) << ",\n"
-     << "  name: \"" << device.name << "\",\n"
-     << "  vendor_id: 0x" << std::hex << std::uppercase << device.vendor_id << ",\n"
-     << "  product_id: 0x" << std::hex << std::uppercase << device.product_id << ",\n"
-     << "  revision: 0x" << std::hex << std::uppercase << device.revision << ",\n"
-     << "  has_dc: " << std::boolalpha << device.has_dc << "\n"
-     << "}";
-
-  os.flags(flags);
-
-  return os;
-}
-
-inline std::ostream& operator<<(std::ostream& os, SDOObjectCode code)
-{
-  switch (code) {
-    case SDOObjectCode::Var:
-      return os << "Var";
-
-    case SDOObjectCode::Array:
-      return os << "Array";
-
-    case SDOObjectCode::Record:
-      return os << "Record";
-
-    default:
-      return os << "Unknown(" << static_cast<int>(code) << ")";
-  }
-}
-
-inline std::ostream& operator<<(std::ostream& os, DataType type)
+inline std::string to_string(const DataType type)
 {
   switch (type) {
     case DataType::UNKNOWN:
-      return os << "UNKNOWN";
-
+      return "UNKNOWN";
     case DataType::BOOLEAN:
-      return os << "BOOLEAN";
+      return "BOOLEAN";
     case DataType::INTEGER8:
-      return os << "INTEGER8";
+      return "INTEGER8";
     case DataType::INTEGER16:
-      return os << "INTEGER16";
+      return "INTEGER16";
     case DataType::INTEGER32:
-      return os << "INTEGER32";
-
+      return "INTEGER32";
     case DataType::UNSIGNED8:
-      return os << "UNSIGNED8";
+      return "UNSIGNED8";
     case DataType::UNSIGNED16:
-      return os << "UNSIGNED16";
+      return "UNSIGNED16";
     case DataType::UNSIGNED32:
-      return os << "UNSIGNED32";
-
+      return "UNSIGNED32";
     case DataType::REAL32:
-      return os << "REAL32";
-
+      return "REAL32";
     case DataType::VISIBLE_STRING:
-      return os << "VISIBLE_STRING";
+      return "VISIBLE_STRING";
     case DataType::OCTET_STRING:
-      return os << "OCTET_STRING";
+      return "OCTET_STRING";
     case DataType::UNICODE_STRING:
-      return os << "UNICODE_STRING";
-
+      return "UNICODE_STRING";
     case DataType::TIME_OF_DAY:
-      return os << "TIME_OF_DAY";
+      return "TIME_OF_DAY";
     case DataType::TIME_DIFFERENCE:
-      return os << "TIME_DIFFERENCE";
-
+      return "TIME_DIFFERENCE";
     case DataType::DOMAIN:
-      return os << "DOMAIN";
-
+      return "DOMAIN";
     case DataType::INTEGER24:
-      return os << "INTEGER24";
+      return "INTEGER24";
     case DataType::REAL64:
-      return os << "REAL64";
-
+      return "REAL64";
     case DataType::INTEGER40:
-      return os << "INTEGER40";
+      return "INTEGER40";
     case DataType::INTEGER48:
-      return os << "INTEGER48";
+      return "INTEGER48";
     case DataType::INTEGER56:
-      return os << "INTEGER56";
+      return "INTEGER56";
     case DataType::INTEGER64:
-      return os << "INTEGER64";
-
+      return "INTEGER64";
     case DataType::UNSIGNED24:
-      return os << "UNSIGNED24";
-
+      return "UNSIGNED24";
     case DataType::UNSIGNED40:
-      return os << "UNSIGNED40";
+      return "UNSIGNED40";
     case DataType::UNSIGNED48:
-      return os << "UNSIGNED48";
+      return "UNSIGNED48";
     case DataType::UNSIGNED56:
-      return os << "UNSIGNED56";
+      return "UNSIGNED56";
     case DataType::UNSIGNED64:
-      return os << "UNSIGNED64";
-
+      return "UNSIGNED64";
     case DataType::BIT1:
-      return os << "BIT1";
+      return "BIT1";
     case DataType::BIT2:
-      return os << "BIT2";
+      return "BIT2";
     case DataType::BIT3:
-      return os << "BIT3";
+      return "BIT3";
     case DataType::BIT4:
-      return os << "BIT4";
+      return "BIT4";
     case DataType::BIT5:
-      return os << "BIT5";
+      return "BIT5";
     case DataType::BIT6:
-      return os << "BIT6";
+      return "BIT6";
     case DataType::BIT7:
-      return os << "BIT7";
+      return "BIT7";
     case DataType::BIT8:
-      return os << "BIT8";
-
-    default:
-      return os << "UNKNOWN_DATATYPE(0x" << std::hex << static_cast<uint16_t>(type) << ")";
+      return "BIT8";
   }
+
+  return "Invalid (" + std::to_string(static_cast<int>(type)) + ")";
 }
 
-/**
- * @brief representation of ethercat device statesoot
- */
-enum class EthercatDeviceState
+inline std::ostream& operator<<(std::ostream& os, const DataType type)
 {
-  None,
-  Init,
-  PreOp,
-  Boot,
-  SafeOp,
-  Operational,
+  return os << to_string(type);
+}
+
+// Types for FileOverEthercat interactions
+struct FoEWriteResult
+{
+  bool success{ false };
+  int working_counter{ 0 };
+
+  explicit operator bool() const
+  {
+    return success;
+  }
 };
-
-inline std::ostream& operator<<(std::ostream& os, EthercatDeviceState state)
+struct FoEReadResult
 {
-  switch (state) {
-    case EthercatDeviceState::None:
-      return os << "None";
-    case EthercatDeviceState::Init:
-      return os << "Init";
-    case EthercatDeviceState::PreOp:
-      return os << "PreOp";
-    case EthercatDeviceState::Boot:
-      return os << "Boot";
-    case EthercatDeviceState::SafeOp:
-      return os << "SafeOp";
-    case EthercatDeviceState::Operational:
-      return os << "Operational";
-    default:
-      return os << "Unknown";
+  bool success{ false };
+  int working_counter{ 0 };
+  std::size_t actual_read_size{ 0 };
+  std::span<const uint8_t> data{};
+
+  explicit operator bool() const
+  {
+    return success;
   }
-}
+};
 
 }  // namespace duatic::ethercat_interface

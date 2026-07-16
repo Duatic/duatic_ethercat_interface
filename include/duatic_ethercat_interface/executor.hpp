@@ -130,11 +130,11 @@ public:
   }
 
 private:
-  logging::Logger logger_;
   std::shared_ptr<EthercatBus> bus_;
   const ExecutorParameters params_;
   std::jthread update_thread_;
   PrecisionUpdateRate update_rate_;
+  logging::Logger logger_;
   bool spinning_{ false };
 
   HighPrecisionClock::time_point last_update_tp_;

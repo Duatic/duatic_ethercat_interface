@@ -29,11 +29,14 @@
 namespace duatic::ethercat_interface
 {
 
+/**
+ * @brief Idenditier for the active (compiled in backend)
+ */
 enum class Backend
 {
-  Unknown,
-  SOEM,
-  Etherlab
+  Unknown = 0,
+  SOEM = 1,
+  Etherlab = 2
 };
 
 inline std::string to_string(const Backend& b)
@@ -47,6 +50,11 @@ inline std::string to_string(const Backend& b)
       return "Etherlab";
   }
   return "Unknown";
+}
+
+inline std::ostream& operator<<(std::ostream& os, const Backend& b)
+{
+  return os << to_string(b);
 }
 
 }  // namespace duatic::ethercat_interface
