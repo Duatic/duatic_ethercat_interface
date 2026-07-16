@@ -156,7 +156,7 @@ struct EthercatBus::BackendImpl
   {
     // Initialize the context - this initializes the passed ethernet interface
     if (const auto ec = ecx_init(&context_.context, params_.interface.c_str()); ec <= 0) {
-      throw BackendError("Failed to open interface: " + interface_ + " Run as root!", Backend::SOEM, ec);
+      throw BackendError("Failed to open interface: " + params_.interface + " Run as root!", Backend::SOEM, ec);
     }
 
     // This discovers devices
@@ -341,7 +341,8 @@ struct EthercatBus::BackendImpl
                             .index = index,
                             .sub_index = sub_index,
                             .direction = SDOTransfer::Direction::Write,
-                            .data = const_cast<uint8_t*>(data.data()),  // TODO introduce write/read transfers?
+                            .data =
+                                const_cast<uint8_t*>(data.data()),  // TODO(firesurfer) introduce write/read transfers?
                             .data_size = static_cast<int>(data.size()),
                             .timeout = timeout,
                             .transfer_finished_cb = [&](const bool success, [[maybe_unused]] const int actual_size,
@@ -396,7 +397,8 @@ struct EthercatBus::BackendImpl
                             .index = index,
                             .sub_index = sub_index,
                             .direction = SDOTransfer::Direction::Write,
-                            .data = const_cast<uint8_t*>(data.data()),  // TODO introduce write/read transfers?
+                            .data =
+                                const_cast<uint8_t*>(data.data()),  // TODO(firesurfer) introduce write/read transfers?
                             .data_size = static_cast<int>(data.size()),
                             .timeout = timeout,
                             .transfer_finished_cb = [=](const bool success, [[maybe_unused]] const int actual_size,
@@ -547,6 +549,23 @@ struct EthercatBus::BackendImpl
     // Bus is now in activated state so the update method knows that it needs to push devices into OPERATIONAL first
     update_bus_state(BusState::Activated);
 
+    // needed for diagnsotics
+    if (latest_diagnostics_.slaves.size() != static_cast<std::size_t>(context_.ecatSlavecount_)) {
+      latest_diagnostics_.slaves.resize(static_cast<std::size_t>(context_.ecatSlavecount_));
+    }
+    // Start the slow diagnostics update thread
+    slow_diagnostics_thread_ = std::make_unique<std::jthread>([this](std::stop_token st) {
+      std::mutex m;
+      std::condition_variable_any cv;
+      std::unique_lock lk(m);
+
+      while (!st.stop_requested()) {
+        update_diagnostics_slow();
+        // sleep 500ms, but wake immediately on stop request
+        cv.wait_for(lk, st, std::chrono::milliseconds(200), [] { return false; });
+      }
+    });
+
     // Give the devices the chance to perfrom any last steps before the operational stage starts
     for (auto& device : devices_) {
       device->on_post_activate();
@@ -574,6 +593,12 @@ struct EthercatBus::BackendImpl
 
     if (get_bus_state() == BusState::Configured || get_bus_state() == BusState::Activated ||
         get_bus_state() == BusState::Operational) {
+      if (slow_diagnostics_thread_) {
+        slow_diagnostics_thread_->request_stop();
+        slow_diagnostics_thread_->join();
+        slow_diagnostics_thread_ = nullptr;
+      }
+
       // Bring all devices into pre-op
       // Note: using device id 0 targets all devices on the bus
       set_device_target_state(0, ec_state::EC_STATE_PRE_OP);
@@ -606,7 +631,7 @@ struct EthercatBus::BackendImpl
   }
   std::optional<std::chrono::nanoseconds> update()
   {
-    if (get_bus_state() != BusState::Activated || get_bus_state() != BusState::Operational) {
+    if (get_bus_state() != BusState::Activated && get_bus_state() != BusState::Operational) {
       throw BackendError("The bus object can only be spun in 'Activated' or 'Operational' state", Backend::SOEM);
     }
 
@@ -874,9 +899,8 @@ struct EthercatBus::BackendImpl
       throw std::logic_error("Requested data size too large");
     }
 
-    // TODO(firesurfer) With SOEM we can only do fully blocking calls. Nevertheless it makes sense to implement the
-    // mechanism as with SDO read/writes to handle thread synchronisation
-
+    // NOTE FPRD calls are in general thread safe to do in parallel to the SDO/PDO calls
+    // Issue with SOEM is only that the highlevel structures are not threadsafe.
     const uint16_t size = static_cast<uint16_t>(data.size());
     const int wkc = ecx_FPRD(&context_.ecat_port, context_.ecatSlavelist_[device_id].configadr, address, size,
                              data.data(), EC_TIMEOUTRET3);
@@ -903,10 +927,8 @@ struct EthercatBus::BackendImpl
     if (data.size() > std::numeric_limits<uint16_t>::max()) {
       throw std::logic_error("Requested data size too large");
     }
-
-    // TODO(firesurfer) With SOEM we can only do fully blocking calls. Nevertheless it makes sense to implement the
-    // mechanism as with SDO
-    // read/writes to handle thread synchronisation
+    // NOTE FPRD calls are in general thread safe to do in parallel to the SDO/PDO calls
+    // Issue with SOEM is only that the highlevel structures are not threadsafe.
     const uint16_t size = static_cast<uint16_t>(data.size());
     const int wkc = ecx_FPWR(&context_.ecat_port, context_.ecatSlavelist_[device_id].configadr, address, size,
                              const_cast<uint8_t*>(data.data()), EC_TIMEOUTRET3);
@@ -917,10 +939,12 @@ struct EthercatBus::BackendImpl
   {
     // We allow in non operational bus state to directly obtain device and bus diagnostics
     // This is definitely not the prefered way but necessary for some applications
-    if (force_update && get_bus_state() == BusState::Operational) {
-      throw std::runtime_error("Bus diagnostics force update may not be used why the bus is in operational state !");
+    if (force_update && (get_bus_state() == BusState::Operational || get_bus_state() == BusState::Activated)) {
+      throw std::runtime_error("Bus diagnostics force update may not be used when the bus is either in 'Operational' "
+                               "or 'Activated' state !");
     } else if (force_update) {
-      update_diagnostics(0, 0);
+      update_diagnostics_fast(0, 0);
+      update_diagnostics_slow();
       return latest_diagnostics_;
     } else {
       std::lock_guard lock(diagnostics_mutex_);
@@ -930,7 +954,6 @@ struct EthercatBus::BackendImpl
 
 private:
   // Parameterization
-  const std::string interface_;
   const Parameters params_;
 
   // Ethercat context and bus state tracking
@@ -958,8 +981,9 @@ private:
 
   // Diagnostics
   DiagnosticsSnapshot latest_diagnostics_;
-  std::size_t current_selected_diagnostics_slave_ = 1;
+  std::size_t current_selected_diagnostics_slave_ = 0;  // note this is starting at 0 (not device id index based)
   std::mutex diagnostics_mutex_;
+  std::unique_ptr<std::jthread> slow_diagnostics_thread_;
 
   void update_bus_state(BusState state)
   {
@@ -1009,15 +1033,14 @@ private:
       device->update_read(now);
     }
 
-    // Try to create a diagnostics snapshot
-    update_diagnostics(wkc, expected_wkc);
+    // Update device state - needed for diagnostics
+    update_diagnostics_fast(wkc, expected_wkc);
     return update_rate_correction_factor;
   }
 
-  void update_diagnostics(const int wkc, const int expected_wkc)
+  void update_diagnostics_fast(const int wkc, const int expected_wkc)
   {
     ecx_readstate(&context_.context);
-
     // Do a best effort try to gain access to the diagnostics mutex
     // if it doesn't work we just life with it to avoid timing issues
     if (!diagnostics_mutex_.try_lock()) {
@@ -1040,18 +1063,6 @@ private:
     // Simply count up how many frames we actually sent so far (PDO only)
     snap.bus.frames_sent += 1;
 
-    if (snap.slaves.size() != static_cast<std::size_t>(context_.ecatSlavecount_)) {
-      snap.slaves.resize(static_cast<std::size_t>(context_.ecatSlavecount_));
-    }
-
-    // in round robin
-    if (current_selected_diagnostics_slave_ >= static_cast<std::size_t>(context_.ecatSlavecount_)) {
-      current_selected_diagnostics_slave_ = 0;
-    }
-    /*update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
-                                  snap.slaves[current_selected_diagnostics_slave_]);
-    current_selected_diagnostics_slave_ += 1;
-
     // now we use the cache data we have available
     for (uint16_t i = 0; i < static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
       snap.slaves[i].position = i + 1;
@@ -1059,7 +1070,30 @@ private:
       snap.slaves[i].state =
           map_from_soem_device_state(static_cast<ec_state>(context_.ecatSlavelist_[i + 1].state & 0x0F));
       snap.slaves[i].online = !context_.ecatSlavelist_[i + 1].islost;
-    }*/
+    }
+
+    {
+      std::lock_guard lock(diagnostics_mutex_);
+      latest_diagnostics_ = std::move(snap);
+    }
+  }
+
+  void update_diagnostics_slow()
+  {
+    // Do a best effort try to gain access to the diagnostics mutex
+    // if it doesn't work we just life with it to avoid timing issues
+    if (!diagnostics_mutex_.try_lock()) {
+      return;
+    }
+    DiagnosticsSnapshot snap = latest_diagnostics_;
+    diagnostics_mutex_.unlock();
+    // in round robin
+    if (current_selected_diagnostics_slave_ >= static_cast<std::size_t>(context_.ecatSlavecount_)) {
+      current_selected_diagnostics_slave_ = 0;
+    }
+    update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
+                                  snap.slaves[current_selected_diagnostics_slave_]);
+    current_selected_diagnostics_slave_ += 1;
 
     {
       std::lock_guard lock(diagnostics_mutex_);

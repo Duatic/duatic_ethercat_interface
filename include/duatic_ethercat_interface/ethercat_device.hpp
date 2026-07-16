@@ -297,7 +297,7 @@ public:
       throw DeviceConfigurationError("RXPDO size (" + std::to_string(sizeof(RXPDO)) +
                                      ") does not match configured size (" + std::to_string(rx_pdo_.size()) + ")");
     }
-    // TODO get rid of copy
+    // TODO(firesurfer) get rid of copy
     const auto generic = get_generic_rx_pdo();
     RXPDO temp;
 
@@ -317,7 +317,7 @@ public:
       throw DeviceConfigurationError("RXPDO size (" + std::to_string(sizeof(RXPDO)) +
                                      ") does not match configured size (" + std::to_string(rx_pdo_.size()) + ")");
     }
-    // TODO get rid of copy
+    // TODO(firesurfer) get rid of copy
     std::vector<uint8_t> temp(sizeof(RXPDO));
     std::memcpy(temp.data(), &rx, sizeof(RXPDO));
 
@@ -336,7 +336,7 @@ public:
       throw DeviceConfigurationError("TXPDO size (" + std::to_string(sizeof(TXPDO)) +
                                      ") does not match configured size (" + std::to_string(tx_pdo_.size()) + ")");
     }
-    // TODO get rid of copy
+    // TODO(firesurfer) get rid of copy
     const auto generic = get_generic_tx_pdo();
     TXPDO temp;
     std::memcpy(&temp, generic.data(), sizeof(TXPDO));

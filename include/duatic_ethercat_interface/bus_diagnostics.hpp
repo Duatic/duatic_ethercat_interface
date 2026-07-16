@@ -98,6 +98,10 @@ struct ESCStatus
   // ESC register map, regardless of how many are physically wired;
   // unused ports simply report link_up == false.
   std::array<ESCPortHealth, 4> ports{};
+
+  // As the ESC diagnostics is costly to read we maintain seperate timestamps
+  // for the port diagnostics
+  HighPrecisionTimeStamp ports_update_timestamp;
 };
 
 // Bus-wide diagnostics, sourced from the master's own telemetry rather
@@ -148,6 +152,7 @@ struct DiagnosticsSnapshot
   std::optional<ExecutionStatus> executor;
   // Time this snapshot was captured, using a monotonic clock — suitable
   // for measuring elapsed time between snapshots, not wall-clock display.
+  // @note this does not refere to all subfields!
   HighPrecisionTimeStamp timestamp;
 };
 
