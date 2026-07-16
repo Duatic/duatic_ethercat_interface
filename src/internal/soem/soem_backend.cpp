@@ -479,7 +479,7 @@ struct EthercatBus::BackendImpl
     const int final_iomap_size = ecx_config_map_group(&context_.context, io_map_.data(), 0);
     logging::info(logger_) << "IOMap size: " << final_iomap_size << std::endl;
 
-    if (final_iomap_size > params_.pdo_buffer_size) {
+    if (final_iomap_size > static_cast<int>(params_.pdo_buffer_size)) {
       throw BackendError("Calculated pdo size is: " + std::to_string(final_iomap_size) +
                          " whereas the configured buffer size is: " + std::to_string(params_.pdo_buffer_size));
     }
@@ -522,6 +522,9 @@ struct EthercatBus::BackendImpl
     for (auto& device : devices_) {
       device->on_pre_activate();
     }
+
+    // Reset activation timestamp (needed in case of bus restart)
+    activation_start_tp_ = std::nullopt;
 
     // Now put all devices into safeop first (this is timewise non critical)
 
@@ -603,8 +606,23 @@ struct EthercatBus::BackendImpl
   }
   std::optional<std::chrono::nanoseconds> update()
   {
+    if (get_bus_state() != BusState::Activated || get_bus_state() != BusState::Operational) {
+      throw BackendError("The bus object can only be spun in 'Activated' or 'Operational' state", Backend::SOEM);
+    }
+
     // First thing after startup is to bring the devices into operational state
     if (get_bus_state() == BusState::Activated) {
+      if (!activation_start_tp_) {
+        activation_start_tp_ = HighPrecisionClock::now();
+      }
+      // timeout == 0 -> disable timeout
+      if (params_.timeout_transition_operational > std::chrono::milliseconds{ 0 } &&
+          (HighPrecisionClock::now() - activation_start_tp_.value()) > params_.timeout_transition_operational) {
+        logging::fatal(logger_) << "Failed to put all devices into state 'Operational' within time. Aborting"
+                                << std::endl;
+        shutdown();
+      }
+
       for (const auto& device : devices_) {
         set_device_target_state(device->get_device_id(), ec_state::EC_STATE_OPERATIONAL);
       }
@@ -620,7 +638,6 @@ struct EthercatBus::BackendImpl
       }
 
       if (all_in_operational) {
-        // TODO add timeout ?
         update_bus_state(BusState::Operational);
       }
     }
@@ -921,6 +938,7 @@ private:
   // Memory where SOEM will store its pdos aftwards
   std::vector<uint8_t> io_map_;
   std::atomic<BusState> state_{ BusState::PreInit };
+  std::optional<HighPrecisionTimeStamp> activation_start_tp_{};
 
   // Device management
   std::vector<std::shared_ptr<EthercatDeviceBase>> devices_;
@@ -932,9 +950,13 @@ private:
   // Synchronization of sdo read/writes into update thread
   std::queue<SDOTransfer> sdo_transfer_queue_;
 
+  // Backend logger
   logging::Logger logger_;
+
+  // DC
   DCSyncController dc_sync_;
 
+  // Diagnostics
   DiagnosticsSnapshot latest_diagnostics_;
   std::size_t current_selected_diagnostics_slave_ = 1;
   std::mutex diagnostics_mutex_;

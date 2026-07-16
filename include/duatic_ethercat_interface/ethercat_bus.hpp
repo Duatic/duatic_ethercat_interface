@@ -61,6 +61,10 @@ public:
     std::chrono::nanoseconds dc_cycle_time{};
     std::chrono::nanoseconds dc_sync0_shift{};
     std::chrono::nanoseconds master_send_offset{};
+
+    // Time to wait for all devices to reach operational state
+    // A value of 0 will disable the timeout
+    std::chrono::milliseconds timeout_transition_operational{ 1000 };
   };
 
   explicit EthercatBus(const Parameters& params);
