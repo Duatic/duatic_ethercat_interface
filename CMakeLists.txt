@@ -63,10 +63,11 @@ target_link_libraries(bus_scanner duatic_ethercat_interface cxxopts::cxxopts)
 
 # Installation
 
-
+# exclude the "internal" folder which is not part of the public API
 install(
   DIRECTORY include/
   DESTINATION include/${PROJECT_NAME}
+  REGEX "duatic_ethercat_interface/internal(/|$)" EXCLUDE
 )
 
 install(
