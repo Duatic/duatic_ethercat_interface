@@ -19,6 +19,7 @@ endforeach()
 add_library(duatic_ethercat_interface
   src/internal/soem/soem_backend.cpp
   src/ethercat_device.cpp
+  src/bus_diagnostics.cpp
   src/example/demo.cpp
 )
 add_library(duatic_ethercat_interface::duatic_ethercat_interface ALIAS duatic_ethercat_interface)
@@ -45,6 +46,9 @@ target_compile_options(duatic_ethercat_interface PRIVATE
   -Wsign-conversion
   -Wnull-dereference
   -Werror=return-type
+  -Wuseless-cast
+  -Wswitch-enum
+  -Wlogical-op
 )
 
 # Causes the visibility macros to use dllexport rather than dllimport,

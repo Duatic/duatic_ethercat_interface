@@ -34,6 +34,7 @@
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 #include "duatic_ethercat_interface/types.hpp"
 #include "duatic_ethercat_interface/bus_diagnostics.hpp"
+#include "duatic_ethercat_interface/backend.hpp"
 
 namespace duatic::ethercat_interface
 {
@@ -268,6 +269,11 @@ public:
    * @note not thread safe
    */
   static std::vector<std::string> list_interfaces();
+  /**
+   * @brief used_backend - obtain the configured and used backend implementation identifier
+   * @note this is mostly for debugging and identification purpouses
+   */
+  static Backend used_backend();
 
 private:
   // Pimpl pattern which hides the actual backend implementation

@@ -27,6 +27,7 @@
 #include <array>
 #include <cstdint>
 #include <vector>
+#include <ostream>
 
 #include "duatic_ethercat_interface/types.hpp"
 
@@ -155,5 +156,8 @@ struct DiagnosticsSnapshot
   // @note this does not refere to all subfields!
   HighPrecisionTimeStamp timestamp;
 };
+
+std::string to_string(const DiagnosticsSnapshot& snap);
+std::ostream& operator<<(std::ostream& os, const DiagnosticsSnapshot& snap);
 
 }  // namespace duatic::ethercat_interface

@@ -39,7 +39,7 @@ enum class Backend
   Etherlab = 2
 };
 
-inline std::string to_string(const Backend& b)
+inline std::string to_string(const Backend b)
 {
   switch (b) {
     case Backend::Unknown:
@@ -52,7 +52,7 @@ inline std::string to_string(const Backend& b)
   return "Unknown";
 }
 
-inline std::ostream& operator<<(std::ostream& os, const Backend& b)
+inline std::ostream& operator<<(std::ostream& os, const Backend b)
 {
   return os << to_string(b);
 }

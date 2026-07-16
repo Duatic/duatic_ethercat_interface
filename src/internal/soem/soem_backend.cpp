@@ -165,6 +165,11 @@ struct EthercatBus::BackendImpl
       throw BackendError("No devices found on the bus", Backend::SOEM, device_count);
     }
 
+    // Needed for diagnsotics
+    if (latest_diagnostics_.slaves.size() != static_cast<std::size_t>(context_.ecatSlavecount_)) {
+      latest_diagnostics_.slaves.resize(static_cast<std::size_t>(context_.ecatSlavecount_));
+    }
+
     update_bus_state(BusState::Initialized);
     return device_count;
   }
@@ -482,6 +487,7 @@ struct EthercatBus::BackendImpl
     logging::info(logger_) << "IOMap size: " << final_iomap_size << std::endl;
 
     if (final_iomap_size > static_cast<int>(params_.pdo_buffer_size)) {
+      shutdown();
       throw BackendError("Calculated pdo size is: " + std::to_string(final_iomap_size) +
                          " whereas the configured buffer size is: " + std::to_string(params_.pdo_buffer_size));
     }
@@ -490,6 +496,7 @@ struct EthercatBus::BackendImpl
     if (!ecx_configdc(&context_.context)) {
       if (params_.dc_enabled) {
         logger_.error("No devices with DC support found on the bus");
+        shutdown();
         throw BackendError("No devices wiht DC support found on the bus but DC sync is enabled");
       } else {
         logger_.info("No devices with DC support found on the bus");
@@ -549,10 +556,6 @@ struct EthercatBus::BackendImpl
     // Bus is now in activated state so the update method knows that it needs to push devices into OPERATIONAL first
     update_bus_state(BusState::Activated);
 
-    // needed for diagnsotics
-    if (latest_diagnostics_.slaves.size() != static_cast<std::size_t>(context_.ecatSlavecount_)) {
-      latest_diagnostics_.slaves.resize(static_cast<std::size_t>(context_.ecatSlavecount_));
-    }
     // Start the slow diagnostics update thread
     slow_diagnostics_thread_ = std::make_unique<std::jthread>([this](std::stop_token st) {
       std::mutex m;
@@ -561,7 +564,6 @@ struct EthercatBus::BackendImpl
 
       while (!st.stop_requested()) {
         update_diagnostics_slow();
-        // sleep 500ms, but wake immediately on stop request
         cv.wait_for(lk, st, std::chrono::milliseconds(200), [] { return false; });
       }
     });
@@ -646,6 +648,8 @@ struct EthercatBus::BackendImpl
         logging::fatal(logger_) << "Failed to put all devices into state 'Operational' within time. Aborting"
                                 << std::endl;
         shutdown();
+        throw BackendError("Could not bring all devices into state 'Operational' within the given timeframe",
+                           Backend::SOEM);
       }
 
       for (const auto& device : devices_) {
@@ -856,7 +860,7 @@ struct EthercatBus::BackendImpl
     const int wkc =
         ecx_FOEwrite(&context_.context, device_id, const_cast<char*>(file_name.c_str()), 0,
                      static_cast<int>(data.size()), const_cast<uint8_t*>(data.data()), EC_TIMEOUTRXM * 1000);
-    return FoEWriteResult{ .success = wkc == 1, .working_counter = wkc };
+    return FoEWriteResult{ .success = wkc > 0, .working_counter = wkc };
   }
   FoEReadResult foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
   {
@@ -864,7 +868,7 @@ struct EthercatBus::BackendImpl
     const int wkc = ecx_FOEread(&context_.context, device_id, const_cast<char*>(file_name.c_str()), 0, &actual_size,
                                 buffer.data(), EC_TIMEOUTRXM * 1000);
 
-    return FoEReadResult{ .success = wkc == 1,
+    return FoEReadResult{ .success = wkc > 0,
                           .working_counter = wkc,
                           .actual_read_size = static_cast<std::size_t>(actual_size),
                           .data = std::span(buffer.data(), static_cast<std::size_t>(actual_size)) };
@@ -881,7 +885,7 @@ struct EthercatBus::BackendImpl
   ec_state get_device_state(const DeviceId device_id)
   {
     // Note ecx_readstate needs to be called once before to update the state
-    return static_cast<ec_state>(context_.ecatSlavelist_[device_id].state);
+    return static_cast<ec_state>(context_.ecatSlavelist_[device_id].state & 0x0F);
   }
 
   RegisterReadResult read_register_untyped(std::span<uint8_t> data, const DeviceId device_id,
@@ -937,11 +941,15 @@ struct EthercatBus::BackendImpl
 
   DiagnosticsSnapshot diagnostics(bool force_update)
   {
+    if (get_bus_state() == BusState::PreInit) {
+      throw BackendError("Cannot access 'BusDiagnostics' on a not initialized bus", Backend::SOEM);
+    }
     // We allow in non operational bus state to directly obtain device and bus diagnostics
     // This is definitely not the prefered way but necessary for some applications
     if (force_update && (get_bus_state() == BusState::Operational || get_bus_state() == BusState::Activated)) {
-      throw std::runtime_error("Bus diagnostics force update may not be used when the bus is either in 'Operational' "
-                               "or 'Activated' state !");
+      throw BackendError("Bus diagnostics force update may not be used when the bus is either in 'Operational' "
+                         "or 'Activated' state !",
+                         Backend::SOEM);
     } else if (force_update) {
       update_diagnostics_fast(0, 0);
       update_diagnostics_slow();
@@ -1223,6 +1231,10 @@ std::vector<std::string> EthercatBus::list_interfaces()
 
   ec_free_adapters(adapter);
   return result;
+}
+Backend EthercatBus::used_backend()
+{
+  return Backend::SOEM;
 }
 DeviceInfo EthercatBus::scan(const DeviceId device_id)
 {
