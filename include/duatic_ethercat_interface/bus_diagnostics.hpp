@@ -111,7 +111,8 @@ struct BusStatus
 {
   // Physical link state of the master's own network interface. Distinct
   // from any slave's ESCPortHealth::link_up.
-  bool link_up = false;
+  // will currently always read true
+  bool link_up = true;
 
   // Cumulative number of EtherCAT frames sent by the master since
   // [master start / activation — confirm & document the reset point].
