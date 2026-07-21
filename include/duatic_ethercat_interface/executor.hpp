@@ -78,25 +78,36 @@ public:
 
     spinning_ = true;
     update_thread_ = std::jthread([&](std::stop_token stoken) {
-      if (!set_realtime_priority(params_.realtime_priority, params_.desired_cpu_core)) {
-        logging::error("Failed to set realtime priority of spin thread - run as root or configure security.limits");
-      }
-      while (!stoken.stop_requested()) {
-        // Do update rate tracking
-        const auto now = HighPrecisionClock::now();
-        const auto update_rate =
-            std::chrono::duration_cast<std::chrono::duration<double>>(now - last_update_tp_).count();
-        average_update_rate_Hz_ = 0.5 * update_rate + 0.5 * average_update_rate_Hz_;
-        last_update_tp_ = now;
-        // In case the distributed clock is enabled we can synchronize our clock accordingly
-        // The bus reports an offset we then feed into the PrecisionUpdateRate
-        // In case dc is disabled std::nullopt is returned
-        const auto dc_correction_offset = bus_->update();
-
-        if (this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
-          logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns()
-                                    << std::endl;
+      try {
+        if (!set_realtime_priority(params_.realtime_priority, params_.desired_cpu_core)) {
+          logging::error(logger_) << "Failed to set realtime priority of spin thread - run as root or configure "
+                                     "security.limits";
         }
+        while (!stoken.stop_requested()) {
+          // Do update rate tracking
+          const auto now = HighPrecisionClock::now();
+          const auto update_rate =
+              std::chrono::duration_cast<std::chrono::duration<double>>(now - last_update_tp_).count();
+          average_update_rate_Hz_ = 0.5 * update_rate + 0.5 * average_update_rate_Hz_;
+          last_update_tp_ = now;
+          // In case the distributed clock is enabled we can synchronize our clock accordingly
+          // The bus reports an offset we then feed into the PrecisionUpdateRate
+          // In case dc is disabled std::nullopt is returned
+          const auto dc_correction_offset = bus_->update();
+
+          if (this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
+            logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns()
+                                      << std::endl;
+          }
+        }
+      } catch (std::exception& ex) {
+        logging::fatal(logger_) << "Caught exception in RT thread: " << ex.what();
+        rt_error_ptr_ = std::current_exception();
+        rt_error_ocurred_.store(true, std::memory_order_release);
+      } catch (...) {
+        logging::fatal(logger_) << "Caught unknown exception in RT thread";
+        rt_error_ptr_ = std::current_exception();
+        rt_error_ocurred_.store(true, std::memory_order_release);
       }
     });
   }
@@ -110,7 +121,7 @@ public:
       update_thread_.join();
     }
     spinning_ = false;
-    // Important to not call shutdown in the spinning thread
+    // Important to not call shutdown in the spinning th
     bus_->shutdown();
   }
 
@@ -128,8 +139,24 @@ public:
                                          .last_update_tp = last_update_tp_ };
     return snapshot;
   }
+  /**
+   * @brief has_rt_error - check if a critical error in the realtime loop has occured
+   */
+  bool has_rt_error() const
+  {
+    return rt_error_ocurred_.load(std::memory_order_acquire);
+  }
+  /**
+   * @brief get_rt_error - get the error that has occured in the rt thrread
+   */
+  std::exception_ptr get_rt_error() const
+  {
+    return rt_error_ptr_;
+  }
 
 private:
+  std::exception_ptr rt_error_ptr_;
+  std::atomic_bool rt_error_ocurred_{ false };
   std::shared_ptr<EthercatBus> bus_;
   const ExecutorParameters params_;
   std::jthread update_thread_;
