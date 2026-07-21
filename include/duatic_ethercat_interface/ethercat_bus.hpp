@@ -69,7 +69,7 @@ public:
 
     // read per port stats from each ethercat device
     // This has a high timing inpact and this therefore disabled by default
-    bool enable_port_diagnostics{false};
+    bool enable_port_diagnostics{ false };
   };
 
   explicit EthercatBus(const Parameters& params);

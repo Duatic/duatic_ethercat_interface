@@ -58,6 +58,7 @@ enum class BusState
   Configured,
   Activated,
   Operational,
+  ShuttingDown,
   Shutdown
 };
 
@@ -91,6 +92,8 @@ inline std::ostream& operator<<(std::ostream& os, BusState state)
       return os << "Activated";
     case BusState::Operational:
       return os << "Operational";
+    case BusState::ShuttingDown:
+      return os << "ShuttingDown";
     case BusState::Shutdown:
       return os << "Shutdown";
   }
@@ -578,8 +581,12 @@ struct EthercatBus::BackendImpl
 
   void shutdown()
   {
+    // Bus is already shutdown - not need to do anything
+    if (get_bus_state() == BusState::Shutdown) {
+      return;
+    }
     // The bus has not been initialized - no need to shut it down
-    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown) {
+    if (get_bus_state() == BusState::PreInit) {
       update_bus_state(BusState::Shutdown);
       return;
     }
@@ -590,34 +597,39 @@ struct EthercatBus::BackendImpl
       ecx_close(&context_.context);
       return;
     }
-
+    // Check if we are in a state that we can shutdown (this is more as a fallback to detect errors)
+    if (get_bus_state() != BusState::Configured && get_bus_state() != BusState::Activated &&
+        get_bus_state() != BusState::Operational) {
+      logging::fatal(logger_) << "Invalid BusState in shutdown: " << get_bus_state()
+                              << " - dont know what to do (Critical Error)" << std::endl;
+      throw BackendError("Invalid BusState in shutdown - dont know what to do", Backend::SOEM);
+    }
+    // Bring it into the intermediate ShuttingDown state which is needed to enforce communication
+    // in the pre-shutdown function to use the synchronous calls
+    update_bus_state(BusState::ShuttingDown);
     for (auto& device : devices_) {
       device->on_pre_shutdown();
     }
-
-    if (get_bus_state() == BusState::Configured || get_bus_state() == BusState::Activated ||
-        get_bus_state() == BusState::Operational) {
-      if (slow_diagnostics_thread_) {
-        slow_diagnostics_thread_->request_stop();
-        slow_diagnostics_thread_->join();
-        slow_diagnostics_thread_ = nullptr;
-      }
-
-      // Bring all devices into pre-op
-      // Note: using device id 0 targets all devices on the bus
-      set_device_target_state(0, ec_state::EC_STATE_PRE_OP);
-      wait_for_device_target_state(0, ec_state::EC_STATE_PRE_OP);
-
-      ecx_close(&context_.context);
-      update_bus_state(BusState::Shutdown);
-      for (auto& device : devices_) {
-        device->on_post_shutdown();
-      }
-
-      return;
+    while (!sdo_transfer_queue_.empty()) {
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
 
-    throw BackendError("Invalid BusState in shutdown - dont know what to do", Backend::SOEM);
+    if (slow_diagnostics_thread_) {
+      slow_diagnostics_thread_->request_stop();
+      slow_diagnostics_thread_->join();
+      slow_diagnostics_thread_ = nullptr;
+    }
+
+    // Bring all devices into pre-op
+    // Note: using device id 0 targets all devices on the bus
+    set_device_target_state(0, ec_state::EC_STATE_PRE_OP);
+    wait_for_device_target_state(0, ec_state::EC_STATE_PRE_OP);
+
+    ecx_close(&context_.context);
+    update_bus_state(BusState::Shutdown);
+    for (auto& device : devices_) {
+      device->on_post_shutdown();
+    }
   }
 
   bool has_device(const DeviceId device_id) const

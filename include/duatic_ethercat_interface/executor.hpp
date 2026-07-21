@@ -98,8 +98,6 @@ public:
                                     << std::endl;
         }
       }
-
-      bus_->shutdown();
     });
   }
   /**
@@ -112,6 +110,8 @@ public:
       update_thread_.join();
     }
     spinning_ = false;
+    // Important to not call shutdown in the spinning thread
+    bus_->shutdown();
   }
 
   /**
