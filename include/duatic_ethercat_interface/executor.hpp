@@ -74,7 +74,7 @@ public:
                            << 1.0 / std::chrono::duration_cast<std::chrono::duration<double>>(
                                         bus_->get_parameters().dc_cycle_time)
                                         .count()
-                           << "Hz" << std::endl;
+                           << "Hz";
 
     spinning_ = true;
     update_thread_ = std::jthread([&](std::stop_token stoken) {
@@ -96,8 +96,8 @@ public:
           const auto dc_correction_offset = bus_->update();
 
           if (this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
-            logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns()
-                                      << std::endl;
+            logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns();
+                                 
           }
         }
       } catch (std::exception& ex) {
