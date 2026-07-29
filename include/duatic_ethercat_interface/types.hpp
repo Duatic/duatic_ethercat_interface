@@ -346,4 +346,87 @@ struct FoEReadResult
   }
 };
 
+// Types for mailbox diagnostics
+enum class MailboxProtocol : uint8_t
+{
+  Unknown,
+  CoE,
+  FoE,
+  SoE,
+  EoE,
+  VoE
+};
+
+enum class MailboxEventKind : uint8_t
+{
+  Unknown,
+  Abort,              ///< Device rejected the service (CoE abort, SoE error, FoE error)
+  Emergency,          ///< Unsolicited device notification - NOT a failure of your request
+  ProtocolViolation,  ///< Malformed or unexpected response; master-side parse failure
+  MailboxLayerError,  ///< Mailbox-layer error response (syntax, unsupported protocol, ...)
+  Timeout,
+  BufferTooSmall,
+  NotFound  ///< FoE file not found; object/subindex absent where distinguishable
+};
+
+enum class MailboxEventSeverity : uint8_t
+{
+  Info,
+  Warning,
+  Error
+};
+
+/// CoE emergency payload. This is the 8-byte ETG/CiA 301 emergency frame
+struct EmergencyInfo
+{
+  uint16_t code{};                ///< 0x0000 == error reset / no error
+  uint8_t error_register{};       ///< mirror of object 0x1001
+  std::array<uint8_t, 5> data{};  ///< manufacturer-specific
+
+  bool is_reset() const
+  {
+    return code == 0x0000;
+  }
+};
+
+/// A single event reported by a device (or by the master) over the mailbox channel.
+struct MailboxEvent
+{
+  HighPrecisionTimeStamp timestamp{};
+  DeviceId device_id{};
+
+  MailboxProtocol protocol{ MailboxProtocol::Unknown };
+  MailboxEventKind kind{ MailboxEventKind::Unknown };
+  MailboxEventSeverity severity{ MailboxEventSeverity::Error };
+
+  /// Protocol-scoped numeric code, interpreted together with `protocol`:
+  /// CoE -> 32-bit abort code (0x06020000, ...), SoE -> 16-bit error code,
+  /// FoE -> 32-bit error code, mailbox layer -> 16-bit detail. 0 if not applicable.
+  uint32_t code{};
+
+  /// Present only when the backend can attribute the event to a specific access.
+  std::optional<SDOIndex> index{};
+  std::optional<SDOSubIndex> sub_index{};
+
+  /// Set iff kind == Emergency.
+  std::optional<EmergencyInfo> emergency{};
+
+  /// Rendered by the backend, since only it can decode its own codes.
+  std::string description{};
+
+  /// True if this event is attributable to the given CoE access.
+  bool matches(DeviceId d, SDOIndex i, SDOSubIndex s) const
+  {
+    return device_id == d && index == i && sub_index == s &&
+           (kind == MailboxEventKind::Abort || kind == MailboxEventKind::ProtocolViolation ||
+            kind == MailboxEventKind::NotFound || kind == MailboxEventKind::BufferTooSmall);
+  }
+
+  /// A real device fault, as opposed to a fault-cleared notification.
+  bool is_device_fault() const
+  {
+    return kind == MailboxEventKind::Emergency && emergency && !emergency->is_reset();
+  }
+};
+
 }  // namespace duatic::ethercat_interface
