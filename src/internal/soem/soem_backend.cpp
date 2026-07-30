@@ -159,6 +159,18 @@ struct EthercatBus::BackendImpl
       latest_diagnostics_.slaves.resize(static_cast<std::size_t>(context_.ecatSlavecount_));
     }
 
+    // Print some general information about some parameters
+    if (params_.enable_bus_diagnostics) {
+      logging::warning(logger_) << "Bus Diagnostics is enabled - this has a low impact on the timing";
+    }
+    if (params_.enable_port_diagnostics) {
+      logging::warning(logger_) << "Port Diagnostics is enabled - this has a high impact on the timing";
+    }
+    if (params_.enable_port_diagnostics && !params_.enable_bus_diagnostics) {
+      logging::error(logger_) << "You enabled 'port diagnostics' but not bus diagnostics - no diagnostics will be "
+                                 "performed";
+    }
+
     update_bus_state(BusState::Initialized);
     return device_count;
   }
