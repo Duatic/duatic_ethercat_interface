@@ -863,7 +863,6 @@ struct EthercatBus::BackendImpl
       update_diagnostics_slow();
       return latest_diagnostics_;
     } else {
-      std::lock_guard lock(diagnostics_mutex_);
       return latest_diagnostics_;
     }
   }
@@ -898,7 +897,7 @@ private:
   // Diagnostics
   DiagnosticsSnapshot latest_diagnostics_;
   std::size_t current_selected_diagnostics_slave_ = 0;  // note this is starting at 0 (not device id index based)
-  std::mutex diagnostics_mutex_;
+
 
   void update_bus_state(BusState state)
   {
@@ -968,65 +967,41 @@ private:
 
   void update_diagnostics_fast(const int wkc, const int expected_wkc)
   {
-    // Do a best effort try to gain access to the diagnostics mutex
-    // if it doesn't work we just life with it to avoid timing issues
-    if (!diagnostics_mutex_.try_lock()) {
-      return;
-    }
     DiagnosticsSnapshot snap = latest_diagnostics_;
-    diagnostics_mutex_.unlock();
-
     // Update the internal diagnostics with:
-    snap.timestamp = HighPrecisionClock::now();
+    latest_diagnostics_.timestamp = HighPrecisionClock::now();
 
     // Case a slave did not answer
     if (wkc >= 0 && wkc != expected_wkc) {
-      snap.bus.wkc_mismatches += 1;
+      latest_diagnostics_.bus.wkc_mismatches += 1;
     }
     // Case a frame got lost or timeout or whatever
     if (wkc < 0) {
-      snap.bus.frames_lost += 1;
+      latest_diagnostics_.bus.frames_lost += 1;
     }
     // Simply count up how many frames we actually sent so far (PDO only)
-    snap.bus.frames_sent += 1;
+    latest_diagnostics_.bus.frames_sent += 1;
 
     // now we use the cache data we have available
     for (uint16_t i = 0; i < static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
-      snap.slaves[i].position = i + 1;
-      snap.slaves[i].al_status = context_.ecatSlavelist_[i + 1].ALstatuscode;
-      snap.slaves[i].state =
+      latest_diagnostics_.slaves[i].position = i + 1;
+      latest_diagnostics_.slaves[i].al_status = context_.ecatSlavelist_[i + 1].ALstatuscode;
+      latest_diagnostics_.slaves[i].state =
           map_from_soem_device_state(static_cast<ec_state>(context_.ecatSlavelist_[i + 1].state & 0x0F));
-      snap.slaves[i].online = !context_.ecatSlavelist_[i + 1].islost;
-    }
-
-    {
-      std::lock_guard lock(diagnostics_mutex_);
-      latest_diagnostics_ = std::move(snap);
+      latest_diagnostics_.slaves[i].online = !context_.ecatSlavelist_[i + 1].islost;
     }
   }
 
   void update_diagnostics_slow()
   {
-    // Do a best effort try to gain access to the diagnostics mutex
-    // if it doesn't work we just life with it to avoid timing issues
-    if (!diagnostics_mutex_.try_lock()) {
-      return;
-    }
-    DiagnosticsSnapshot snap = latest_diagnostics_;
-    diagnostics_mutex_.unlock();
     // in round robin
     if (current_selected_diagnostics_slave_ >= static_cast<std::size_t>(context_.ecatSlavecount_)) {
       current_selected_diagnostics_slave_ = 0;
     }
     update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
-                                  snap.slaves[current_selected_diagnostics_slave_]);
-    snap.slaves[current_selected_diagnostics_slave_].ports_update_timestamp = HighPrecisionClock::now();
+                                  latest_diagnostics_.slaves[current_selected_diagnostics_slave_]);
+    latest_diagnostics_.slaves[current_selected_diagnostics_slave_].ports_update_timestamp = HighPrecisionClock::now();
     current_selected_diagnostics_slave_ += 1;
-
-    {
-      std::lock_guard lock(diagnostics_mutex_);
-      latest_diagnostics_ = std::move(snap);
-    }
   }
 
   void update_slave_port_diagnostics(const uint16 config_adr, ESCStatus& status)
