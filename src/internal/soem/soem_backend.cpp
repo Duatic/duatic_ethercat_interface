@@ -553,8 +553,9 @@ struct EthercatBus::BackendImpl
       if (all_in_operational) {
         update_bus_state(BusState::Operational);
       }
+    } else {
+      internal_service_update();
     }
-    internal_service_update();
   }
 
   std::vector<SDOEntry> read_od_from_device(const DeviceId device_id, bool full_read)
