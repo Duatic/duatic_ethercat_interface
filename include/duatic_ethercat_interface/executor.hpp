@@ -129,7 +129,7 @@ public:
           if (!bus_->update_service()) {
             // They bus can indicate that no service spin is needed anymore
             logging::info(logger_) << "Bus indicated that service thread is not needed anymore - stopping";
-            return;
+            break;
           }
 
           update_timing_diagnostics(service_thread_diagnostics_, start, HighPrecisionClock::now());
@@ -148,6 +148,8 @@ public:
         service_error_ocurred_.store(true, std::memory_order_release);
         service_thread_diagnostics_.is_running = false;
       }
+
+      logging::info(logger_) << "Service thread is ending now" << std::endl;
     });
   }
   /**

@@ -522,7 +522,6 @@ struct EthercatBus::BackendImpl
 
     // Perform the actual pdo read/write actions
     const auto dc_sync_correction_factor = internal_pdo_update();
-
     return dc_sync_correction_factor;
   }
   bool update_service()
