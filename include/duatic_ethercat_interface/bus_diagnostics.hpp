@@ -145,6 +145,8 @@ struct ExecutorTimingDiagnostics
   // Amount of missed timing deadlines
   // This is optional and onyl relevant for the RT thread
   std::optional<uint64_t> missed_rate_steps;
+  // indicate if the specific executor thread is running
+  bool is_running{ false };
 };
 
 // Executor diagnostics which is added by the executor to a diagnostics snapshot

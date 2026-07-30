@@ -42,7 +42,7 @@ struct ExecutorParameters
   int realtime_priority{ 60 };
   int desired_cpu_core{ -1 };
   // rate at which the service  thread is spun
-  std::chrono::milliseconds service_thread_update_rate{ 20 };
+  std::chrono::microseconds service_thread_update_rate{ 2010 };
 };
 
 /**
@@ -85,6 +85,8 @@ public:
           logging::error(logger_) << "Failed to set realtime priority of spin thread - run as root or configure "
                                      "security.limits";
         }
+        rt_thread_diagnostics_.is_running = true;
+
         while (!stoken.stop_requested()) {
           const auto start = HighPrecisionClock::now();
 
@@ -101,14 +103,17 @@ public:
             logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns();
           }
         }
+        rt_thread_diagnostics_.is_running = false;
       } catch (std::exception& ex) {
         logging::fatal(logger_) << "Caught exception in RT thread: " << ex.what();
         rt_error_ptr_ = std::current_exception();
         rt_error_ocurred_.store(true, std::memory_order_release);
+        rt_thread_diagnostics_.is_running = false;
       } catch (...) {
         logging::fatal(logger_) << "Caught unknown exception in RT thread";
         rt_error_ptr_ = std::current_exception();
         rt_error_ocurred_.store(true, std::memory_order_release);
+        rt_thread_diagnostics_.is_running = false;
       }
     });
 
@@ -118,22 +123,30 @@ public:
       std::unique_lock lk(m);
 
       try {
+        service_thread_diagnostics_.is_running = true;
         while (!stoken.stop_requested()) {
           const auto start = HighPrecisionClock::now();
-          bus_->update_service();
+          if (!bus_->update_service()) {
+            // They bus can indicate that no service spin is needed anymore
+            logging::info(logger_) << "Bus indicated that service thread is not needed anymore - stopping";
+            return;
+          }
 
           update_timing_diagnostics(service_thread_diagnostics_, start, HighPrecisionClock::now());
           // We need less precise update rates for the service thread which is why we go for a simple condition variable
           cv.wait_for(lk, stoken, params_.service_thread_update_rate, [] { return false; });
         }
+        service_thread_diagnostics_.is_running = false;
       } catch (std::exception& ex) {
         logging::fatal(logger_) << "Caught exception in Service thread: " << ex.what();
         service_error_ptr_ = std::current_exception();
         service_error_ocurred_.store(true, std::memory_order_release);
+        service_thread_diagnostics_.is_running = false;
       } catch (...) {
         logging::fatal(logger_) << "Caught unknown exception in Service thread";
         service_error_ptr_ = std::current_exception();
         service_error_ocurred_.store(true, std::memory_order_release);
+        service_thread_diagnostics_.is_running = false;
       }
     });
   }
@@ -213,8 +226,8 @@ private:
   logging::Logger logger_;
   bool spinning_{ false };
 
-  ExecutorTimingDiagnostics rt_thread_diagnostics_;
-  ExecutorTimingDiagnostics service_thread_diagnostics_;
+  alignas(64) ExecutorTimingDiagnostics rt_thread_diagnostics_;
+  alignas(64) ExecutorTimingDiagnostics service_thread_diagnostics_;
 
   void update_timing_diagnostics(ExecutorTimingDiagnostics& diag, const HighPrecisionTimeStamp& start_tp,
                                  const HighPrecisionTimeStamp& after_update_tp)

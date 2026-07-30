@@ -513,12 +513,11 @@ struct EthercatBus::BackendImpl
 
     return dc_sync_correction_factor;
   }
-  void update_service()
+  bool update_service()
   {
     if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown ||
         get_bus_state() == BusState::ShuttingDown) {
-      // silently fail in this case?
-      return;
+      throw BackendError("The bus object can only be spun in 'Activated' or 'Operational' state", Backend::SOEM);
     }
 
     // First thing after startup is to bring the devices into operational state
@@ -554,8 +553,17 @@ struct EthercatBus::BackendImpl
         update_bus_state(BusState::Operational);
       }
     } else {
-      internal_service_update();
+      // If the bus is in operational state we can perform bus diagnostics in the background
+      // but this has a timing impact
+      if (params_.enable_bus_diagnostics) {
+        internal_service_update();
+        return true;
+      } else {
+        // indicate that the service thread has nothing todo anymore and may be stopped
+        return false;
+      }
     }
+    return true;
   }
 
   std::vector<SDOEntry> read_od_from_device(const DeviceId device_id, bool full_read)
@@ -1050,7 +1058,7 @@ std::optional<std::chrono::nanoseconds> EthercatBus::update_rt()
 {
   return impl_->update_rt();
 }
-void EthercatBus::update_service()
+bool EthercatBus::update_service()
 {
   return impl_->update_service();
 }

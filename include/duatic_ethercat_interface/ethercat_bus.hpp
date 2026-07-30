@@ -67,8 +67,12 @@ public:
     // A value of 0 will disable the timeout
     std::chrono::milliseconds timeout_transition_operational{ 1000 };
 
+    // enable general bus diagnostics - e.g. check if devices fell out of operational
+    // This has a low timing impact but still measurable and is therefere disabled by default
+    bool enable_bus_diagnostics{ false };
     // read per port stats from each ethercat device
-    // This has a high timing inpact and this therefore disabled by default
+    // This has a high timing impact and is therefore disabled by default
+    // note - enabled_bus_diagnostics needs to be enabled for port diagnostics
     bool enable_port_diagnostics{ false };
   };
 
@@ -131,7 +135,7 @@ public:
    * @note thread safe
    * @note both update_service and update_rt need to be called on a regular base
    */
-  void update_service();
+  bool update_service();
 
   /**
    * @brief attach_device - let this bus instance handle the specific ethercat device.
