@@ -28,6 +28,33 @@
 
 namespace duatic::ethercat_interface
 {
+namespace
+{
+void print_timing(std::ostream& os, const char* label, const ExecutorTimingDiagnostics& t)
+{
+  const auto flags = os.flags();
+  const auto prec = os.precision();
+
+  os << "  " << label << ":\n";
+  os << "    last update:       " << t.last_update_tp.time_since_epoch().count() << " ns (monotonic)\n";
+  os << "    last update rate:  " << t.last_update_rate.count() << " us\n";
+  os << "    last duration:     " << t.last_update_duration.count() << " us\n";
+  os << std::fixed << std::setprecision(2);
+  os << "    avg update rate:   " << t.average_update_rate << " Hz\n";
+  os << "    avg duration:      " << t.average_update_duration << " us\n";
+  os.flags(flags);
+  os.precision(prec);
+
+  // RT-thread-only fields
+  if (t.missed_rate_steps) {
+    os << "    missed rate steps: " << *t.missed_rate_steps << "\n";
+  }
+  if (t.accumulated_delay) {
+    os << "    accumulated delay: " << t.accumulated_delay->count() << " ns\n";
+  }
+}
+}  // namespace
+
 std::string to_string(const DiagnosticsSnapshot& snap)
 {
   std::ostringstream os;
@@ -65,15 +92,14 @@ std::string to_string(const DiagnosticsSnapshot& snap)
   if (snap.executor) {
     const auto& e = *snap.executor;
     os << "\n-- Executor --\n";
-    os << "  spin thread:       " << (e.spin_thread_running ? "running" : "stopped") << "\n";
-    os << "  missed rate steps: " << e.missed_rate_steps << "\n";
-    os << "  accumulated delay: " << e.accumulated_delay.count() << " ns\n";
-    os << "  avg update rate:   " << e.average_update_rate_Hz << " Hz\n";
-    os << "  last update:       " << e.last_update_tp.time_since_epoch().count() << " ns (monotonic)\n";
+    os << "  spinning: " << (e.is_spinning ? "yes" : "no") << "\n";
+    print_timing(os, "rt thread", e.rt_thread_stats);
+    print_timing(os, "service thread", e.service_thread_stats);
   }
 
   return os.str();
 }
+
 std::ostream& operator<<(std::ostream& os, const DiagnosticsSnapshot& snap)
 {
   return os << to_string(snap);

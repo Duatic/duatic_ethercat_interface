@@ -434,20 +434,6 @@ struct EthercatBus::BackendImpl
     // Bus is now in activated state so the update method knows that it needs to push devices into OPERATIONAL first
     update_bus_state(BusState::Activated);
 
-    // Start the slow diagnostics update thread
-    if (params_.enable_port_diagnostics) {
-      slow_diagnostics_thread_ = std::make_unique<std::jthread>([this](std::stop_token st) {
-        std::mutex m;
-        std::condition_variable_any cv;
-        std::unique_lock lk(m);
-
-        while (!st.stop_requested()) {
-          update_diagnostics_slow();
-          cv.wait_for(lk, st, std::chrono::milliseconds(200), [] { return false; });
-        }
-      });
-    }
-
     // Give the devices the chance to perfrom any last steps before the operational stage starts
     for (auto& device : devices_) {
       device->on_post_activate();
@@ -468,7 +454,7 @@ struct EthercatBus::BackendImpl
     logging::info(logger_) << "Performing bus shutdown: " << params_.interface;
     // We only initialized the bus - just close the connection
     if (get_bus_state() == BusState::Initialized) {
-      std::lock_guard<std::mutex> lock(mailbox_mutex_);
+      std::scoped_lock lock(pdo_update_mutex_, state_mutex_, mailbox_mutex_);
       update_bus_state(BusState::Shutdown);
 
       ecx_close(&context_.context);
@@ -488,19 +474,13 @@ struct EthercatBus::BackendImpl
       device->on_pre_shutdown();
     }
 
-    if (slow_diagnostics_thread_) {
-      slow_diagnostics_thread_->request_stop();
-      slow_diagnostics_thread_->join();
-      slow_diagnostics_thread_ = nullptr;
-    }
-
     // Bring all devices into pre-op
     // Note: using device id 0 targets all devices on the bus
     set_device_target_state(0, ec_state::EC_STATE_PRE_OP);
     wait_for_device_target_state(0, ec_state::EC_STATE_PRE_OP);
 
     {
-      std::lock_guard<std::mutex> lock(mailbox_mutex_);
+      std::scoped_lock lock(pdo_update_mutex_, state_mutex_, mailbox_mutex_);
       ecx_close(&context_.context);
       update_bus_state(BusState::Shutdown);
     }
@@ -522,10 +502,23 @@ struct EthercatBus::BackendImpl
   {
     return id > 0 && id <= get_device_count();
   }
-  std::optional<std::chrono::nanoseconds> update()
+  std::optional<std::chrono::nanoseconds> update_rt()
   {
     if (get_bus_state() != BusState::Activated && get_bus_state() != BusState::Operational) {
       throw BackendError("The bus object can only be spun in 'Activated' or 'Operational' state", Backend::SOEM);
+    }
+
+    // Perform the actual pdo read/write actions
+    const auto dc_sync_correction_factor = internal_pdo_update();
+
+    return dc_sync_correction_factor;
+  }
+  void update_service()
+  {
+    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown ||
+        get_bus_state() == BusState::ShuttingDown) {
+      // silently fail in this case?
+      return;
     }
 
     // First thing after startup is to bring the devices into operational state
@@ -548,7 +541,7 @@ struct EthercatBus::BackendImpl
       }
 
       // Update the context once (needed for the device state check)
-      ecx_readstate(&context_.context);
+      update_device_states();  // go through the lock
 
       bool all_in_operational = true;
       for (const auto& device : devices_) {
@@ -561,10 +554,7 @@ struct EthercatBus::BackendImpl
         update_bus_state(BusState::Operational);
       }
     }
-    // Perform the actual pdo read/write actions
-    const auto dc_sync_correction_factor = internal_pdo_update();
-
-    return dc_sync_correction_factor;
+    internal_service_update();
   }
 
   std::vector<SDOEntry> read_od_from_device(const DeviceId device_id, bool full_read)
@@ -763,12 +753,13 @@ struct EthercatBus::BackendImpl
 
     return FoEReadResult{ .success = wkc > 0,
                           .working_counter = wkc,
-                          .actual_read_size = wkc > 0 ?  static_cast<std::size_t>(actual_size): 0,
+                          .actual_read_size = wkc > 0 ? static_cast<std::size_t>(actual_size) : 0,
                           .data = wkc > 0 ? std::span(buffer.data(), static_cast<std::size_t>(actual_size)) :
                                             std::span(buffer.data(), 0) };
   }
   bool set_device_target_state(const DeviceId device_id, ec_state target_state)
   {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     if (device_id != 0 && !has_device_on_bus(device_id)) {
       return false;
     }
@@ -777,10 +768,12 @@ struct EthercatBus::BackendImpl
   }
   bool wait_for_device_target_state(const DeviceId device_id, ec_state target_state, int timeout = EC_TIMEOUTSTATE)
   {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     return ecx_statecheck(&context_.context, device_id, target_state, timeout) == target_state;
   }
   ec_state get_device_state(const DeviceId device_id)
   {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     // Note ecx_readstate needs to be called once before to update the state
     return static_cast<ec_state>(context_.ecatSlavelist_[device_id].state & 0x0F);
   }
@@ -834,12 +827,13 @@ struct EthercatBus::BackendImpl
 
   DiagnosticsSnapshot diagnostics(bool force_update)
   {
-    if (get_bus_state() == BusState::PreInit) {
+    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown) {
       throw BackendError("Cannot access 'BusDiagnostics' on a not initialized bus", Backend::SOEM);
     }
     // We allow in non operational bus state to directly obtain device and bus diagnostics
     // This is definitely not the prefered way but necessary for some applications
-    if (force_update && (get_bus_state() == BusState::Operational || get_bus_state() == BusState::Activated)) {
+    if (force_update && (get_bus_state() == BusState::Operational || get_bus_state() == BusState::Activated ||
+                         get_bus_state() == BusState::Configured)) {
       throw BackendError("Bus diagnostics force update may not be used when the bus is either in 'Operational' "
                          "or 'Activated' state !",
                          Backend::SOEM);
@@ -871,6 +865,8 @@ private:
   mutable std::mutex pdo_update_mutex_;
   // SDO call sync
   std::mutex mailbox_mutex_;
+  // State change related
+  std::mutex state_mutex_;
 
   // Backend logger
   logging::Logger logger_;
@@ -881,9 +877,7 @@ private:
   // Diagnostics
   DiagnosticsSnapshot latest_diagnostics_;
   std::size_t current_selected_diagnostics_slave_ = 0;  // note this is starting at 0 (not device id index based)
-  std::size_t diagnostics_state_update_divider_ = 0;
   std::mutex diagnostics_mutex_;
-  std::unique_ptr<std::jthread> slow_diagnostics_thread_;
 
   void update_bus_state(BusState state)
   {
@@ -893,6 +887,12 @@ private:
   BusState get_bus_state() const
   {
     return state_;
+  }
+
+  void update_device_states()
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    ecx_readstate(&context_.context);
   }
 
   std::optional<std::chrono::nanoseconds> internal_pdo_update()
@@ -933,18 +933,20 @@ private:
       device->update_read(now);
     }
 
-    // Update device state - needed for diagnostics
     update_diagnostics_fast(wkc, expected_wkc);
     return update_rate_correction_factor;
   }
 
+  void internal_service_update()
+  {
+    update_device_states();
+    if (params_.enable_port_diagnostics) {
+      update_diagnostics_slow();
+    }
+  }
+
   void update_diagnostics_fast(const int wkc, const int expected_wkc)
   {
-    diagnostics_state_update_divider_++;
-    if (diagnostics_state_update_divider_ >= 10) {
-      diagnostics_state_update_divider_ = 0;
-      ecx_readstate(&context_.context);
-    }
     // Do a best effort try to gain access to the diagnostics mutex
     // if it doesn't work we just life with it to avoid timing issues
     if (!diagnostics_mutex_.try_lock()) {
@@ -1043,9 +1045,13 @@ int EthercatBus::initialize()
 {
   return impl_->initialize();
 }
-std::optional<std::chrono::nanoseconds> EthercatBus::update()
+std::optional<std::chrono::nanoseconds> EthercatBus::update_rt()
 {
-  return impl_->update();
+  return impl_->update_rt();
+}
+void EthercatBus::update_service()
+{
+  return impl_->update_service();
 }
 const EthercatBus::Parameters& EthercatBus::get_parameters() const
 {

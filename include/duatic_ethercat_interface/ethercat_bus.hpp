@@ -121,11 +121,17 @@ public:
   void shutdown();
 
   /**
-   * @brief update - perform a single bus update step
+   * @brief update_rt - perform a single bus update step
    * @note thread safe
    * @return correction factor for update rate in case DC sync is active
    */
-  std::optional<std::chrono::nanoseconds> update();
+  std::optional<std::chrono::nanoseconds> update_rt();
+  /**
+   * @brief update_service - perform a single bus update step of the servicing thread
+   * @note thread safe
+   * @note both update_service and update_rt need to be called on a regular base
+   */
+  void update_service();
 
   /**
    * @brief attach_device - let this bus instance handle the specific ethercat device.

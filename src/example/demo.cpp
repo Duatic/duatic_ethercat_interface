@@ -95,7 +95,12 @@ int main(void)
 
   // OR
   while (true) {
-    bus->update();
+    bus->update_rt();
+  }
+  // thread 2
+  {
+    bus->update_service();
+    sleep(20);  // sleep 20ms
   }
 }
 

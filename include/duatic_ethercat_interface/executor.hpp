@@ -41,6 +41,8 @@ struct ExecutorParameters
   // priority and desired cpu core for the update thread
   int realtime_priority{ 60 };
   int desired_cpu_core{ -1 };
+  // rate at which the service  thread is spun
+  std::chrono::milliseconds service_thread_update_rate{ 20 };
 };
 
 /**
@@ -77,27 +79,26 @@ public:
                            << "Hz";
 
     spinning_ = true;
-    update_thread_ = std::jthread([&](std::stop_token stoken) {
+    rt_thread_ = std::jthread([&](std::stop_token stoken) {
       try {
         if (!set_realtime_priority(params_.realtime_priority, params_.desired_cpu_core)) {
           logging::error(logger_) << "Failed to set realtime priority of spin thread - run as root or configure "
                                      "security.limits";
         }
         while (!stoken.stop_requested()) {
-          // Do update rate tracking
-          const auto now = HighPrecisionClock::now();
-          const auto update_rate =
-              std::chrono::duration_cast<std::chrono::duration<double>>(now - last_update_tp_).count();
-          average_update_rate_Hz_ = 0.5 * update_rate + 0.5 * average_update_rate_Hz_;
-          last_update_tp_ = now;
+          const auto start = HighPrecisionClock::now();
+
           // In case the distributed clock is enabled we can synchronize our clock accordingly
           // The bus reports an offset we then feed into the PrecisionUpdateRate
           // In case dc is disabled std::nullopt is returned
-          const auto dc_correction_offset = bus_->update();
+          const auto dc_correction_offset = bus_->update_rt();
+
+          update_timing_diagnostics(rt_thread_diagnostics_, start, HighPrecisionClock::now());
+          rt_thread_diagnostics_.missed_rate_steps = update_rate_.overrun_count();
+          rt_thread_diagnostics_.accumulated_delay = update_rate_.accumulated_delay_ns();
 
           if (this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
             logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns();
-                                 
           }
         }
       } catch (std::exception& ex) {
@@ -110,18 +111,50 @@ public:
         rt_error_ocurred_.store(true, std::memory_order_release);
       }
     });
+
+    service_thread_ = std::jthread([&](std::stop_token stoken) {
+      std::mutex m;
+      std::condition_variable_any cv;
+      std::unique_lock lk(m);
+
+      try {
+        while (!stoken.stop_requested()) {
+          const auto start = HighPrecisionClock::now();
+          bus_->update_service();
+
+          update_timing_diagnostics(service_thread_diagnostics_, start, HighPrecisionClock::now());
+          // We need less precise update rates for the service thread which is why we go for a simple condition variable
+          cv.wait_for(lk, stoken, params_.service_thread_update_rate, [] { return false; });
+        }
+      } catch (std::exception& ex) {
+        logging::fatal(logger_) << "Caught exception in Service thread: " << ex.what();
+        service_error_ptr_ = std::current_exception();
+        service_error_ocurred_.store(true, std::memory_order_release);
+      } catch (...) {
+        logging::fatal(logger_) << "Caught unknown exception in Service thread";
+        service_error_ptr_ = std::current_exception();
+        service_error_ocurred_.store(true, std::memory_order_release);
+      }
+    });
   }
   /**
    * @brief stop - Stop spinning the given bus instances
    */
   void stop()
   {
-    if (spinning_ && update_thread_.joinable()) {
-      update_thread_.request_stop();
-      update_thread_.join();
+    if (!spinning_) {
+      return;
+    }
+    if (rt_thread_.joinable()) {
+      rt_thread_.request_stop();
+      rt_thread_.join();
+    }
+    if (service_thread_.joinable()) {
+      service_thread_.request_stop();
+      service_thread_.join();
     }
     spinning_ = false;
-    // Important to not call shutdown in the spinning th
+    // Important to not call shutdown in the spinning thread
     bus_->shutdown();
   }
 
@@ -132,11 +165,9 @@ public:
   DiagnosticsSnapshot full_diagnostics(bool force_update = false)
   {
     auto snapshot = bus_->diagnostics(force_update);
-    snapshot.executor = ExecutionStatus{ .spin_thread_running = spinning_,
-                                         .missed_rate_steps = this->update_rate_.overrun_count(),
-                                         .accumulated_delay = this->update_rate_.accumulated_delay_ns(),
-                                         .average_update_rate_Hz = average_update_rate_Hz_,
-                                         .last_update_tp = last_update_tp_ };
+    snapshot.executor = ExecutionStatus{ .is_spinning = spinning_,
+                                         .rt_thread_stats = rt_thread_diagnostics_,
+                                         .service_thread_stats = service_thread_diagnostics_ };
     return snapshot;
   }
   /**
@@ -153,18 +184,51 @@ public:
   {
     return rt_error_ptr_;
   }
+  /**
+   * @brief has_service_error - check if a critical error in the service loop has occured
+   */
+  bool has_service_error() const
+  {
+    return service_error_ocurred_;
+  }
+  /**
+   * @brief get_service_error - get the error that has occured in the service thread
+   */
+  std::exception_ptr get_service_error() const
+  {
+    return service_error_ptr_;
+  }
 
 private:
   std::exception_ptr rt_error_ptr_;
   std::atomic_bool rt_error_ocurred_{ false };
+
+  std::exception_ptr service_error_ptr_;
+  std::atomic_bool service_error_ocurred_{ false };
   std::shared_ptr<EthercatBus> bus_;
   const ExecutorParameters params_;
-  std::jthread update_thread_;
+  std::jthread rt_thread_;
+  std::jthread service_thread_;
   PrecisionUpdateRate update_rate_;
   logging::Logger logger_;
   bool spinning_{ false };
 
-  HighPrecisionClock::time_point last_update_tp_;
-  double average_update_rate_Hz_{ 0.0 };
+  ExecutorTimingDiagnostics rt_thread_diagnostics_;
+  ExecutorTimingDiagnostics service_thread_diagnostics_;
+
+  void update_timing_diagnostics(ExecutorTimingDiagnostics& diag, const HighPrecisionTimeStamp& start_tp,
+                                 const HighPrecisionTimeStamp& after_update_tp)
+  {
+    using namespace std::chrono;  // NOLINT(build/namespaces)
+    // First diagnostics is -> at which interval was the update called
+    diag.last_update_rate = duration_cast<microseconds>(start_tp - diag.last_update_tp);
+    diag.average_update_rate =
+        0.5 * duration_cast<duration<double>>(diag.last_update_rate).count() + 0.5 * diag.average_update_rate;
+    diag.last_update_tp = start_tp;
+    // Second diagnostics is -> how long took the update
+    diag.last_update_duration = duration_cast<microseconds>(after_update_tp - start_tp);
+    diag.average_update_duration =
+        0.5 * duration_cast<duration<double>>(diag.last_update_duration).count() + 0.5 * diag.average_update_duration;
+  }
 };
 }  // namespace duatic::ethercat_interface

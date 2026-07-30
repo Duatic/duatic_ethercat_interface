@@ -127,20 +127,35 @@ struct BusStatus
   uint64_t wkc_mismatches = 0;
 };
 
+struct ExecutorTimingDiagnostics
+{
+  // Last point in time the specific executor thread update has happened
+  HighPrecisionTimeStamp last_update_tp;
+  // Interval at which the last update happened
+  std::chrono::microseconds last_update_rate;
+  // Amount of time the last update step took
+  std::chrono::microseconds last_update_duration;
+  // Average update rate of the executor in Hz
+  double average_update_rate{ 0.0 };
+  // Average amount of time the update takes in us
+  double average_update_duration{ 0.0 };
+  // How much delay we accumulated in total due to missed deadlines
+  // This is optional and only relevant for the RT thread
+  std::optional<std::chrono::nanoseconds> accumulated_delay;
+  // Amount of missed timing deadlines
+  // This is optional and onyl relevant for the RT thread
+  std::optional<uint64_t> missed_rate_steps;
+};
+
 // Executor diagnostics which is added by the executor to a diagnostics snapshot
 struct ExecutionStatus
 {
   // Indicate whether the executor is currently running
-  bool spin_thread_running = false;
-  // Amount of missed timing deadlines
-  uint64_t missed_rate_steps = 0;
-  // Total accumulated delay of the executor
-  std::chrono::nanoseconds accumulated_delay;
-
-  // Average update rate in hz
-  double average_update_rate_Hz{ 0 };
-  // Last point in the the bus update was called
-  HighPrecisionTimeStamp last_update_tp;
+  bool is_spinning = false;
+  // Statistics for the realtime thread
+  ExecutorTimingDiagnostics rt_thread_stats;
+  // Statistics for the service thread
+  ExecutorTimingDiagnostics service_thread_stats;
 };
 
 // A consistent, point-in-time view of bus and slave diagnostics.
