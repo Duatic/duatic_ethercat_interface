@@ -898,7 +898,6 @@ private:
   DiagnosticsSnapshot latest_diagnostics_;
   std::size_t current_selected_diagnostics_slave_ = 0;  // note this is starting at 0 (not device id index based)
 
-
   void update_bus_state(BusState state)
   {
     logging::info(logger_) << "Bus transitioning into state: " << state;
