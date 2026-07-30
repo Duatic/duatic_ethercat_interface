@@ -965,7 +965,6 @@ private:
 
   void update_diagnostics_fast(const int wkc, const int expected_wkc)
   {
-    DiagnosticsSnapshot snap = latest_diagnostics_;
     // Update the internal diagnostics with:
     latest_diagnostics_.timestamp = HighPrecisionClock::now();
 
@@ -981,12 +980,14 @@ private:
     latest_diagnostics_.bus.frames_sent += 1;
 
     // now we use the cache data we have available
-    for (uint16_t i = 0; i < static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
-      latest_diagnostics_.slaves[i].position = i + 1;
-      latest_diagnostics_.slaves[i].al_status = context_.ecatSlavelist_[i + 1].ALstatuscode;
-      latest_diagnostics_.slaves[i].state =
-          map_from_soem_device_state(static_cast<ec_state>(context_.ecatSlavelist_[i + 1].state & 0x0F));
-      latest_diagnostics_.slaves[i].online = !context_.ecatSlavelist_[i + 1].islost;
+    if (params_.enable_bus_diagnostics) {
+      for (uint16_t i = 0; i < static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
+        latest_diagnostics_.slaves[i].position = i + 1;
+        latest_diagnostics_.slaves[i].al_status = context_.ecatSlavelist_[i + 1].ALstatuscode;
+        latest_diagnostics_.slaves[i].state =
+            map_from_soem_device_state(static_cast<ec_state>(context_.ecatSlavelist_[i + 1].state & 0x0F));
+        latest_diagnostics_.slaves[i].online = !context_.ecatSlavelist_[i + 1].islost;
+      }
     }
   }
 
