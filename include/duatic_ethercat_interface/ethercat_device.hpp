@@ -248,13 +248,16 @@ public:
    * @note this function is fully thread safe and does not block the bus.
    * This access the raw data which needs to be interpreted afterwards
    */
-  std::span<const uint8_t> get_generic_rx_pdo() const
+  void get_generic_rx_pdo(std::span<uint8_t> out) const
   {
     if (!pdo_initialized) {
       throw DeviceConfigurationError("Cannot access rx pdo - PDOs have not been configured yet");
     }
+    if (out.size() != rx_pdo_.size()) {
+      throw DeviceConfigurationError("Size mismatch");
+    }
     std::lock_guard<std::mutex> lock(pdo_update_mutex_);
-    return rx_pdo_;
+    std::memcpy(out.data(), rx_pdo_.data(), out.size());
   }
   /**
    * @brief Configure the next RX PDO to be sent to the device (rx == data the master sends and the device receives)
@@ -266,23 +269,28 @@ public:
     if (!pdo_initialized) {
       throw DeviceConfigurationError("Cannot access rx pdo - PDOs have not been configured yet");
     }
+    if (rx.size() != rx_pdo_.size()) {
+      throw DeviceConfigurationError("RX PDO size mismatch");
+    }
 
     std::lock_guard<std::mutex> lock(pdo_update_mutex_);
-    rx_pdo_.assign(rx.begin(), rx.end());
+    std::memcpy(rx_pdo_.data(), rx.data(), rx.size());
   }
   /**
    * @brief Access the latest received TX PDO (tx == data the device sends the the maste receives)
    * @note this function is fully thread safe and does not block the bus. The data is copied from the bus at the
    * update_read call
    */
-  std::span<const uint8_t> get_generic_tx_pdo() const
+  void get_generic_tx_pdo(std::span<uint8_t> out) const
   {
     if (!pdo_initialized) {
       throw DeviceConfigurationError("Cannot access tx pdo - PDOs have not been configured yet");
     }
-
+    if (out.size() != tx_pdo_.size()) {
+      throw DeviceConfigurationError("Size mismatch");
+    }
     std::lock_guard<std::mutex> lock(pdo_update_mutex_);
-    return tx_pdo_;
+    std::memcpy(out.data(), tx_pdo_.data(), out.size());
   }
 
   /**
@@ -297,11 +305,8 @@ public:
       throw DeviceConfigurationError("RXPDO size (" + std::to_string(sizeof(RXPDO)) +
                                      ") does not match configured size (" + std::to_string(rx_pdo_.size()) + ")");
     }
-    // TODO(firesurfer) get rid of copy
-    const auto generic = get_generic_rx_pdo();
     RXPDO temp;
-
-    std::memcpy(&temp, generic.data(), sizeof(RXPDO));
+    get_generic_rx_pdo({ reinterpret_cast<uint8_t*>(&temp), sizeof(RXPDO) });
     return temp;
   }
   /**
@@ -317,11 +322,7 @@ public:
       throw DeviceConfigurationError("RXPDO size (" + std::to_string(sizeof(RXPDO)) +
                                      ") does not match configured size (" + std::to_string(rx_pdo_.size()) + ")");
     }
-    // TODO(firesurfer) get rid of copy
-    std::vector<uint8_t> temp(sizeof(RXPDO));
-    std::memcpy(temp.data(), &rx, sizeof(RXPDO));
-
-    set_generic_rx_pdo(temp);
+    set_generic_rx_pdo({ reinterpret_cast<const uint8_t*>(&rx), sizeof(RXPDO) });
   }
   /**
    * @brief Access the latest received TX PDO (tx == data the device sends the the maste receives)
@@ -336,10 +337,8 @@ public:
       throw DeviceConfigurationError("TXPDO size (" + std::to_string(sizeof(TXPDO)) +
                                      ") does not match configured size (" + std::to_string(tx_pdo_.size()) + ")");
     }
-    // TODO(firesurfer) get rid of copy
-    const auto generic = get_generic_tx_pdo();
     TXPDO temp;
-    std::memcpy(&temp, generic.data(), sizeof(TXPDO));
+    get_generic_tx_pdo({ reinterpret_cast<uint8_t*>(&temp), sizeof(TXPDO) });
     return temp;
   }
   /**

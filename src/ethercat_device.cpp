@@ -66,7 +66,7 @@ void GenericEthercatDevice::update_write(const HighPrecisionTimeStamp& tp)
 void GenericEthercatDevice::update_read(const HighPrecisionTimeStamp& tp)
 {
   std::lock_guard<std::mutex> lock(pdo_update_mutex_);
-  tx_pdo_ = bus_->read_tx_pdo(get_device_id());
+  bus_->read_tx_pdo(get_device_id(), tx_pdo_);
   tx_pdo_last_read_time_ = tp;
 };
 

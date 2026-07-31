@@ -230,7 +230,7 @@ public:
    * @brief read_tx_pdo - read raw data of the tx pdo (tx -> direction the device transmits)
    * @note thread safe
    */
-  std::vector<uint8_t> read_tx_pdo(const DeviceId device_id) const;
+  void read_tx_pdo(const DeviceId device_id, std::span<uint8_t> data) const;
 
   /**
    * @brief change_device_state - try to start a state transition of the specified device into the specified state

@@ -674,7 +674,7 @@ struct EthercatBus::BackendImpl
     std::memcpy(context_.ecatSlavelist_[device_id].outputs, data.data(), size);
   }
 
-  std::vector<uint8_t> read_tx_pdo(const DeviceId device_id) const
+  void read_tx_pdo(const DeviceId device_id, std::span<uint8_t> data) const
   {
     if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Initialized) {
       throw BackendError("Cannot access pdo for device - pdo needs to be configured first");
@@ -684,12 +684,12 @@ struct EthercatBus::BackendImpl
     }
 
     const auto size = context_.ecatSlavelist_[device_id].Ibytes;
-    std::vector<uint8_t> result(size, 0);
+    if (data.size() != static_cast<std::size_t>(size)) {
+      throw BackendError("Critical array size mismatch when reading tx pdo", Backend::SOEM);
+    }
 
     std::lock_guard<std::mutex> lock(pdo_update_mutex_);
-    std::memcpy(result.data(), context_.ecatSlavelist_[device_id].inputs, size);
-
-    return result;
+    std::memcpy(data.data(), context_.ecatSlavelist_[device_id].inputs, size);
   }
 
   FoEWriteResult foe_write(const DeviceId device_id, const std::string& file_name, std::span<const uint8_t> data)
@@ -1154,9 +1154,9 @@ void EthercatBus::write_rx_pdo(const DeviceId device_id, const std::vector<uint8
   impl_->write_rx_pdo(device_id, data);
 }
 
-std::vector<uint8_t> EthercatBus::read_tx_pdo(const DeviceId device_id) const
+void EthercatBus::read_tx_pdo(const DeviceId device_id, std::span<uint8_t> data) const
 {
-  return impl_->read_tx_pdo(device_id);
+  impl_->read_tx_pdo(device_id, data);
 }
 
 template <typename T>
