@@ -753,7 +753,7 @@ struct EthercatBus::BackendImpl
   }
 
   RegisterReadResult read_register_untyped(std::span<uint8_t> data, const DeviceId device_id,
-                                           const RegisterAddress address,[[maybe_unused]] bool check_size)
+                                           const RegisterAddress address, [[maybe_unused]] bool check_size)
   {
     // Only perform operations on an initialized bus
     if (get_bus_state() == BusState::PreInit) {
@@ -769,7 +769,7 @@ struct EthercatBus::BackendImpl
 
     const uint16_t size = static_cast<uint16_t>(data.size());
     const int wkc = ecx_FPRD(&context_.ecat_port, context_.ecatSlavelist_[device_id].configadr, address, size,
-                             data.data(), EC_TIMEOUTRET3); 
+                             data.data(), EC_TIMEOUTRET3);
 
     return RegisterReadResult{
       .success = wkc > 0,
@@ -982,7 +982,8 @@ private:
     if (params_.enable_bus_diagnostics) {
       // NOTE as all accesses before are simple access on x86 we only try to lock the diagnostics mutex at this point
       // This is on some architectures a risk we accept it on purpose to improve the timing behavior of the RT loop
-      if (!diagnostics_mutex_.try_lock()) {
+      std::unique_lock<std::mutex> lock(diagnostics_mutex_, std::try_to_lock);
+      if (!lock.owns_lock()) {
         return;
       }
       for (uint16_t i = 0; i < static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
