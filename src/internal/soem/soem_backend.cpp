@@ -519,10 +519,8 @@ struct EthercatBus::BackendImpl
     if (get_bus_state() != BusState::Activated && get_bus_state() != BusState::Operational) {
       throw BackendError("The bus object can only be spun in 'Activated' or 'Operational' state", Backend::SOEM);
     }
-
-    // Perform the actual pdo read/write actions
-    const auto dc_sync_correction_factor = internal_pdo_update();
-    return dc_sync_correction_factor;
+    // Perform the actual pdo read/write actions, the function return the dc_correction factor for the update rate
+    return internal_pdo_update();
   }
   bool update_service()
   {
@@ -530,51 +528,7 @@ struct EthercatBus::BackendImpl
         get_bus_state() == BusState::ShuttingDown) {
       throw BackendError("The bus object can only be spun in 'Activated' or 'Operational' state", Backend::SOEM);
     }
-
-    // First thing after startup is to bring the devices into operational state
-    if (get_bus_state() == BusState::Activated) {
-      if (!activation_start_tp_) {
-        activation_start_tp_ = HighPrecisionClock::now();
-      }
-      // timeout == 0 -> disable timeout
-      if (params_.timeout_transition_operational > std::chrono::milliseconds{ 0 } &&
-          (HighPrecisionClock::now() - activation_start_tp_.value()) > params_.timeout_transition_operational) {
-        logging::fatal(logger_) << "Failed to put all devices into state 'Operational' within time. Aborting"
-                                << std::endl;
-        shutdown();
-        throw BackendError("Could not bring all devices into state 'Operational' within the given timeframe",
-                           Backend::SOEM);
-      }
-
-      for (const auto& device : devices_) {
-        set_device_target_state(device->get_device_id(), ec_state::EC_STATE_OPERATIONAL);
-      }
-
-      // Update the context once (needed for the device state check)
-      update_device_states();  // go through the lock
-
-      bool all_in_operational = true;
-      for (const auto& device : devices_) {
-        if (get_device_state(device->get_device_id()) != ec_state::EC_STATE_OPERATIONAL) {
-          all_in_operational = false;
-        }
-      }
-
-      if (all_in_operational) {
-        update_bus_state(BusState::Operational);
-      }
-    } else {
-      // If the bus is in operational state we can perform bus diagnostics in the background
-      // but this has a timing impact
-      if (params_.enable_bus_diagnostics) {
-        internal_service_update();
-        return true;
-      } else {
-        // indicate that the service thread has nothing todo anymore and may be stopped
-        return false;
-      }
-    }
-    return true;
+    return internal_service_update();
   }
 
   std::vector<SDOEntry> read_od_from_device(const DeviceId device_id, bool full_read)
@@ -799,7 +753,7 @@ struct EthercatBus::BackendImpl
   }
 
   RegisterReadResult read_register_untyped(std::span<uint8_t> data, const DeviceId device_id,
-                                           const RegisterAddress address, bool check_size)
+                                           const RegisterAddress address,[[maybe_unused]] bool check_size)
   {
     // Only perform operations on an initialized bus
     if (get_bus_state() == BusState::PreInit) {
@@ -815,7 +769,7 @@ struct EthercatBus::BackendImpl
 
     const uint16_t size = static_cast<uint16_t>(data.size());
     const int wkc = ecx_FPRD(&context_.ecat_port, context_.ecatSlavelist_[device_id].configadr, address, size,
-                             data.data(), EC_TIMEOUTRET3);
+                             data.data(), EC_TIMEOUTRET3); 
 
     return RegisterReadResult{
       .success = wkc > 0,
@@ -862,6 +816,7 @@ struct EthercatBus::BackendImpl
       update_diagnostics_slow();
       return latest_diagnostics_;
     } else {
+      std::lock_guard<std::mutex> lock(diagnostics_mutex_);
       return latest_diagnostics_;
     }
   }
@@ -895,6 +850,7 @@ private:
 
   // Diagnostics
   DiagnosticsSnapshot latest_diagnostics_;
+  std::mutex diagnostics_mutex_;
   std::size_t current_selected_diagnostics_slave_ = 0;  // note this is starting at 0 (not device id index based)
 
   void update_bus_state(BusState state)
@@ -933,7 +889,7 @@ private:
         logging::error(logger_) << "Failed to send process data" << std::endl;
       }
       wkc = ecx_receive_processdata(&context_.context, EC_TIMEOUTRET);
-    
+
       expected_wkc = context_.context.grouplist[0].outputsWKC * 2 + context_.context.grouplist[0].inputsWKC;
       if (wkc < expected_wkc) {
         logging::warning(logger_) << params_.interface << " Working counter too low (pdo): " << wkc
@@ -955,12 +911,55 @@ private:
     return update_rate_correction_factor;
   }
 
-  void internal_service_update()
+  bool internal_service_update()
   {
-    update_device_states();
-    if (params_.enable_port_diagnostics) {
-      update_diagnostics_slow();
+    // First thing after startup is to bring the devices into operational state
+    if (get_bus_state() == BusState::Activated) {
+      if (!activation_start_tp_) {
+        activation_start_tp_ = HighPrecisionClock::now();
+      }
+      // timeout == 0 -> disable timeout
+      if (params_.timeout_transition_operational > std::chrono::milliseconds{ 0 } &&
+          (HighPrecisionClock::now() - activation_start_tp_.value()) > params_.timeout_transition_operational) {
+        logging::fatal(logger_) << "Failed to put all devices into state 'Operational' within time. Aborting"
+                                << std::endl;
+        shutdown();
+        throw BackendError("Could not bring all devices into state 'Operational' within the given timeframe",
+                           Backend::SOEM);
+      }
+
+      for (const auto& device : devices_) {
+        set_device_target_state(device->get_device_id(), ec_state::EC_STATE_OPERATIONAL);
+      }
+
+      // Update the context once (needed for the device state check)
+      update_device_states();  // go through the lock
+
+      bool all_in_operational = true;
+      for (const auto& device : devices_) {
+        if (get_device_state(device->get_device_id()) != ec_state::EC_STATE_OPERATIONAL) {
+          all_in_operational = false;
+        }
+      }
+
+      if (all_in_operational) {
+        update_bus_state(BusState::Operational);
+      }
+    } else {
+      // If the bus is in operational state we can perform bus diagnostics in the background
+      // but this has a timing impact
+      if (params_.enable_bus_diagnostics) {
+        update_device_states();
+        if (params_.enable_port_diagnostics) {
+          update_diagnostics_slow();
+        }
+        return true;
+      } else {
+        // indicate that the service thread has nothing todo anymore and may be stopped
+        return false;
+      }
     }
+    return true;
   }
 
   void update_diagnostics_fast(const int wkc, const int expected_wkc)
@@ -981,6 +980,11 @@ private:
 
     // now we use the cache data we have available
     if (params_.enable_bus_diagnostics) {
+      // NOTE as all accesses before are simple access on x86 we only try to lock the diagnostics mutex at this point
+      // This is on some architectures a risk we accept it on purpose to improve the timing behavior of the RT loop
+      if (!diagnostics_mutex_.try_lock()) {
+        return;
+      }
       for (uint16_t i = 0; i < static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
         latest_diagnostics_.slaves[i].position = i + 1;
         latest_diagnostics_.slaves[i].al_status = context_.ecatSlavelist_[i + 1].ALstatuscode;

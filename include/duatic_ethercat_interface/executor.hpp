@@ -231,14 +231,15 @@ private:
   alignas(64) ExecutorTimingDiagnostics rt_thread_diagnostics_;
   alignas(64) ExecutorTimingDiagnostics service_thread_diagnostics_;
 
-  void update_timing_diagnostics(ExecutorTimingDiagnostics& diag, const HighPrecisionTimeStamp& start_tp,
-                                 const HighPrecisionTimeStamp& after_update_tp)
+  static constexpr void update_timing_diagnostics(ExecutorTimingDiagnostics& diag,
+                                                  const HighPrecisionTimeStamp& start_tp,
+                                                  const HighPrecisionTimeStamp& after_update_tp)
   {
     using namespace std::chrono;  // NOLINT(build/namespaces)
     // First diagnostics is -> at which interval was the update called
     diag.last_update_rate = duration_cast<microseconds>(start_tp - diag.last_update_tp);
     diag.average_update_rate =
-        0.5 * (1.0/duration_cast<duration<double>>(diag.last_update_rate).count()) + 0.5 * diag.average_update_rate;
+        0.5 * (1.0 / duration_cast<duration<double>>(diag.last_update_rate).count()) + 0.5 * diag.average_update_rate;
     diag.last_update_tp = start_tp;
     // Second diagnostics is -> how long took the update
     diag.last_update_duration = duration_cast<microseconds>(after_update_tp - start_tp);
