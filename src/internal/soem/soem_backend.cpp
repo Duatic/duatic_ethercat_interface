@@ -933,7 +933,7 @@ private:
         logging::error(logger_) << "Failed to send process data" << std::endl;
       }
       wkc = ecx_receive_processdata(&context_.context, EC_TIMEOUTRET);
-
+    
       expected_wkc = context_.context.grouplist[0].outputsWKC * 2 + context_.context.grouplist[0].inputsWKC;
       if (wkc < expected_wkc) {
         logging::warning(logger_) << params_.interface << " Working counter too low (pdo): " << wkc

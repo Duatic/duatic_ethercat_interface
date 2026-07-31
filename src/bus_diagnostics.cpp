@@ -39,7 +39,7 @@ void print_timing(std::ostream& os, const char* label, const ExecutorTimingDiagn
   os << "    last update:       " << t.last_update_tp.time_since_epoch().count() << " ns (monotonic)\n";
   os << "    last update rate:  " << t.last_update_rate.count() << " us\n";
   os << "    last duration:     " << t.last_update_duration.count() << " us\n";
-  os << std::fixed << std::setprecision(2);
+  os << std::fixed << std::setprecision(6);
   os << "    avg update rate:   " << t.average_update_rate << " Hz\n";
   os << "    avg duration:      " << t.average_update_duration << " us\n";
   os.flags(flags);
