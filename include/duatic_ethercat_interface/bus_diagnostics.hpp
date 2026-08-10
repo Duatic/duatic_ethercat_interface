@@ -34,6 +34,44 @@
 namespace duatic::ethercat_interface
 {
 
+enum class DiagnosticsLevel
+{
+  // Diagnostics is disabled completely
+  Off = 0,
+  // Basic diagnostics is enabled
+  Basic = 1,
+  // Specific diagnostic events are also logged
+  Tracing = 2
+};
+
+struct DiagnosticsOptions
+{
+  DiagnosticsOptions() = default;
+  explicit DiagnosticsOptions(DiagnosticsLevel level)
+  {
+    pdo_diagnostics = level;
+    mailbox_diagnostics = level;
+    esc_diagnostics = level;
+    esc_port_diagnostics = level;
+  }
+  // PDO related basic diagnostics such as WKC mismatcheds, lost frames, and total frames sent
+  DiagnosticsLevel pdo_diagnostics{ DiagnosticsLevel::Basic };
+  // All mailbox related functions (e.g. SDO...)
+  // Please note mailbox diagnostics related types are in the "types.hpp" header
+  DiagnosticsLevel mailbox_diagnostics{ DiagnosticsLevel::Basic };
+  // Diagnostics related to esc (this is mostly tracking state changes of an esc)
+  DiagnosticsLevel esc_diagnostics{ DiagnosticsLevel::Off };
+  // Diagnostics related to every port of an esc (very expensive diagnostics)
+  DiagnosticsLevel esc_port_diagnostics{ DiagnosticsLevel::Off };
+};
+/**
+ * @brief is_diagnostics_enabled - check if the diagnostics level is higher than 'Off'
+ */
+constexpr bool is_diagnostics_enabled(const DiagnosticsLevel level)
+{
+  return level != DiagnosticsLevel::Off;
+}
+
 // AL Status Code as defined by ETG.1000/ETG.1020 — the vendor-independent
 // reason code a slave reports alongside its state (e.g. why it refused a
 // state transition). 0x0000 conventionally means "no error".

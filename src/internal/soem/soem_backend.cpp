@@ -160,15 +160,14 @@ struct EthercatBus::BackendImpl
     }
 
     // Print some general information about some parameters
-    if (params_.enable_bus_diagnostics) {
+    if (is_diagnostics_enabled(params_.diagnostics.pdo_diagnostics)) {
       logging::warning(logger_) << "Bus Diagnostics is enabled - this has a low impact on the timing";
     }
-    if (params_.enable_port_diagnostics) {
-      logging::warning(logger_) << "Port Diagnostics is enabled - this has a high impact on the timing";
+    if (is_diagnostics_enabled(params_.diagnostics.esc_diagnostics)) {
+      logging::warning(logger_) << "ESC Diagnostics is enabled - this has a high impact on the timing";
     }
-    if (params_.enable_port_diagnostics && !params_.enable_bus_diagnostics) {
-      logging::error(logger_) << "You enabled 'port diagnostics' but not bus diagnostics - no diagnostics will be "
-                                 "performed";
+    if (is_diagnostics_enabled(params_.diagnostics.esc_port_diagnostics)) {
+      logging::warning(logger_) << "ESC Port Diagnostics is enabled - this has a  veryhigh impact on the timing";
     }
 
     update_bus_state(BusState::Initialized);
@@ -948,9 +947,9 @@ private:
     } else {
       // If the bus is in operational state we can perform bus diagnostics in the background
       // but this has a timing impact
-      if (params_.enable_bus_diagnostics) {
+      if (is_diagnostics_enabled(params_.diagnostics.esc_diagnostics)) {
         update_device_states();
-        if (params_.enable_port_diagnostics) {
+        if (is_diagnostics_enabled(params_.diagnostics.esc_port_diagnostics)) {
           update_diagnostics_slow();
         }
         return true;
@@ -979,7 +978,7 @@ private:
     latest_diagnostics_.bus.frames_sent += 1;
 
     // now we use the cache data we have available
-    if (params_.enable_bus_diagnostics) {
+    if (is_diagnostics_enabled(params_.diagnostics.esc_diagnostics)) {
       // NOTE as all accesses before are simple access on x86 we only try to lock the diagnostics mutex at this point
       // This is on some architectures a risk we accept it on purpose to improve the timing behavior of the RT loop
       std::unique_lock<std::mutex> lock(diagnostics_mutex_, std::try_to_lock);

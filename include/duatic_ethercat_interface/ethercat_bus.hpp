@@ -67,13 +67,8 @@ public:
     // A value of 0 will disable the timeout
     std::chrono::milliseconds timeout_transition_operational{ 1000 };
 
-    // enable general bus diagnostics - e.g. check if devices fell out of operational
-    // This has a low timing impact but still measurable and is therefere disabled by default
-    bool enable_bus_diagnostics{ false };
-    // read per port stats from each ethercat device
-    // This has a high timing impact and is therefore disabled by default
-    // note - enabled_bus_diagnostics needs to be enabled for port diagnostics
-    bool enable_port_diagnostics{ false };
+    // Configure various diagnostic options related to the bus
+    DiagnosticsOptions diagnostics{};
   };
 
   explicit EthercatBus(const Parameters& params);
