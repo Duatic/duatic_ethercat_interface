@@ -596,7 +596,7 @@ struct EthercatBus::BackendImpl
 
     // FoE carries no index/sub_index - the drain's optional checks skip those fields.
     const MailboxAccess access{ device_id, MailboxProtocol::FoE };
-    auto [event, failed] = finish_mailbox_access(access, wkc);
+    auto [event, failed] = finish_foe_access(access, wkc);
 
     if (failed) {
       logging::error(logger_) << "Device id " << device_id << ": FoE write of \"" << file_name << "\" failed, wkc "
@@ -625,7 +625,7 @@ struct EthercatBus::BackendImpl
                                 buffer.data(), EC_TIMEOUTRXM * 1000);
 
     const MailboxAccess access{ device_id, MailboxProtocol::FoE };
-    auto [event, failed] = finish_mailbox_access(access, wkc);
+    auto [event, failed] = finish_foe_access(access, wkc);
 
     if (failed) {
       logging::error(logger_) << "Device id " << device_id << ": FoE read of \"" << file_name << "\" failed, wkc "
@@ -866,6 +866,8 @@ private:
       if (all_in_operational) {
         update_bus_state(BusState::Operational);
       }
+
+      return true;
     } else {
       // If the bus is in operational state we can perform bus diagnostics in the background
       // but this has a timing impact
@@ -1033,6 +1035,23 @@ private:
     // An attributed event is never an Emergency by construction, so severity alone decides.
     const bool failed = wkc <= 0 || (event && event->severity == MailboxEventSeverity::Error);
     return { std::move(event), failed };
+  }
+  std::pair<std::optional<MailboxEvent>, bool> finish_foe_access(const MailboxAccess& acc, const int wkc)
+  {
+    // FoE itself never pushes, but the ecx_mbxreceive underneath it does - mailbox-layer
+    // errors and emergencies still arrive this way, so the drain is not optional.
+    auto event = drain_mailbox_events(acc);
+
+    if (wkc > 0) {
+      return { std::move(event), event && event->severity == MailboxEventSeverity::Error };
+    }
+    if (event) {
+      report_mailbox_event(*event);
+    }
+    // A decoded FoE code is more specific than anything the drain could have found.
+    event = make_foe_event(acc.device_id, wkc);
+    report_mailbox_event(*event);
+    return { std::move(event), true };
   }
 };
 

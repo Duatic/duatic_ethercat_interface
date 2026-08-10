@@ -69,29 +69,6 @@ static MailboxEvent make_mailbox_event(const ec_errort& e)
       ev.emergency = emcy;
       break;
     }
-
-    case EC_ERR_TYPE_FOE_ERROR:
-      ev.protocol = MailboxProtocol::FoE;
-      ev.kind = MailboxEventKind::Abort;
-      ev.code = static_cast<uint32_t>(e.AbortCode);
-      ev.description = "FoE error";
-      break;
-    case EC_ERR_TYPE_FOE_FILE_NOTFOUND:
-      ev.protocol = MailboxProtocol::FoE;
-      ev.kind = MailboxEventKind::NotFound;
-      ev.description = "FoE file not found";
-      break;
-    case EC_ERR_TYPE_FOE_BUF2SMALL:
-      ev.protocol = MailboxProtocol::FoE;
-      ev.kind = MailboxEventKind::BufferTooSmall;
-      ev.description = "FoE receive buffer too small";
-      break;
-    case EC_ERR_TYPE_FOE_PACKETNUMBER:
-      ev.protocol = MailboxProtocol::FoE;
-      ev.kind = MailboxEventKind::ProtocolViolation;
-      ev.description = "FoE packet number mismatch";
-      break;
-
     case EC_ERR_TYPE_SOE_ERROR:
       ev.protocol = MailboxProtocol::SoE;
       ev.kind = MailboxEventKind::Abort;
@@ -112,7 +89,18 @@ static MailboxEvent make_mailbox_event(const ec_errort& e)
       ev.code = e.ErrorCode;
       ev.description = "Malformed mailbox packet";
       break;
-
+      // FoE reports its failures through the return value of ecx_FOE{read,write}, never
+    // through the error list - see make_foe_event(). These cases exist only to satisfy
+    // -Wswitch-enum; reaching them means SOEM changed behaviour.
+    case EC_ERR_TYPE_FOE_ERROR:
+    case EC_ERR_TYPE_FOE_BUF2SMALL:
+    case EC_ERR_TYPE_FOE_PACKETNUMBER:
+    case EC_ERR_TYPE_FOE_FILE_NOTFOUND:
+      ev.protocol = MailboxProtocol::FoE;
+      ev.kind = MailboxEventKind::Unknown;
+      ev.description =
+          "Unexpected FoE error on the error list (type " + std::to_string(static_cast<int>(e.Etype)) + ")";
+      break;
     default:
       ev.kind = MailboxEventKind::Unknown;
       ev.description = "Unknown SOEM error type (" + std::to_string(static_cast<int>(e.Etype)) + ")";
@@ -131,6 +119,51 @@ static MailboxEvent make_timeout_event(const MailboxAccess& acc)
   ev.sub_index = acc.sub_index;
   ev.severity = MailboxEventSeverity::Error;
   ev.description = "No mailbox response (working counter <= 0)";
+  return ev;
+}
+
+static MailboxEvent make_foe_event(const DeviceId device_id, const int wkc)
+{
+  MailboxEvent ev{};
+  ev.timestamp = HighPrecisionClock::now();
+  ev.device_id = device_id;
+  ev.protocol = MailboxProtocol::FoE;
+  ev.severity = MailboxEventSeverity::Error;
+
+  // NOTE: wkc == 0 must be handled before negating - EC_ERR_TYPE_SDO_ERROR is 0.
+  if (wkc == 0) {
+    ev.kind = MailboxEventKind::Timeout;
+    ev.description = "No FoE response (working counter 0)";
+    return ev;
+  }
+
+  ev.code = static_cast<uint32_t>(-wkc);
+  switch (-wkc) {
+    case EC_ERR_TYPE_FOE_FILE_NOTFOUND:
+      ev.kind = MailboxEventKind::NotFound;
+      ev.description = "FoE file not found";
+      break;
+    case EC_ERR_TYPE_FOE_BUF2SMALL:
+      ev.kind = MailboxEventKind::BufferTooSmall;
+      ev.description = "FoE receive buffer too small";
+      break;
+    case EC_ERR_TYPE_FOE_PACKETNUMBER:
+      ev.kind = MailboxEventKind::ProtocolViolation;
+      ev.description = "FoE packet number mismatch";
+      break;
+    case EC_ERR_TYPE_PACKET_ERROR:
+      ev.kind = MailboxEventKind::ProtocolViolation;
+      ev.description = "Unexpected frame during FoE transfer";
+      break;
+    case EC_ERR_TYPE_FOE_ERROR:
+      ev.kind = MailboxEventKind::Abort;
+      ev.description = "FoE error reported by device";
+      break;
+    default:
+      ev.kind = MailboxEventKind::Unknown;
+      ev.description = "FoE failed with code " + std::to_string(wkc);
+      break;
+  }
   return ev;
 }
 }  // namespace duatic::ethercat_interface::internal::soem
