@@ -29,6 +29,8 @@
 #include <atomic>    // NOLINT(build/include_order)
 #include <optional>  // NOLINT(build/include_order)
 
+#include <duatic_message_logger/log.hpp>
+
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/ethercat_device.hpp"
 #include "duatic_ethercat_interface/distributed_clock_sync.hpp"
@@ -37,7 +39,9 @@
 
 #include "duatic_ethercat_interface/internal/backend_impl.hpp"
 #include "duatic_ethercat_interface/internal/soem/soem_context.hpp"
-#include "duatic_message_logger/log.hpp"
+#include "duatic_ethercat_interface/internal/soem/bus_state.hpp"
+#include "duatic_ethercat_interface/internal/soem/mailbox.hpp"
+
 // Implementation of the EthercatBus for the SOEM library
 namespace duatic::ethercat_interface
 {
@@ -48,80 +52,6 @@ using namespace internal::soem;  // NOLINT(build/namespaces)
 std::string to_string(const AlStatus& status)
 {
   return std::string(ec_ALstatuscode2string(status));
-}
-
-enum class BusState
-{
-  PreInit,
-  Initialized,
-  Configured,
-  Activated,
-  Operational,
-  ShuttingDown,
-  Shutdown
-};
-
-inline std::ostream& operator<<(std::ostream& os, BusState state)
-{
-  switch (state) {
-    case BusState::PreInit:
-      return os << "PreInit";
-    case BusState::Initialized:
-      return os << "Initialized";
-    case BusState::Configured:
-      return os << "Configured";
-    case BusState::Activated:
-      return os << "Activated";
-    case BusState::Operational:
-      return os << "Operational";
-    case BusState::ShuttingDown:
-      return os << "ShuttingDown";
-    case BusState::Shutdown:
-      return os << "Shutdown";
-  }
-
-  return os << "Unknown";
-}
-
-static constexpr ec_state map_to_soem_device_state(const EthercatDeviceState state)
-{
-  switch (state) {
-    case EthercatDeviceState::None:
-      return ec_state::EC_STATE_NONE;
-    case EthercatDeviceState::Init:
-      return ec_state::EC_STATE_INIT;
-    case EthercatDeviceState::PreOp:
-      return ec_state::EC_STATE_PRE_OP;
-    case EthercatDeviceState::Boot:
-      return ec_state::EC_STATE_BOOT;
-    case EthercatDeviceState::SafeOp:
-      return ec_state::EC_STATE_SAFE_OP;
-    case EthercatDeviceState::Operational:
-      return ec_state::EC_STATE_OPERATIONAL;
-
-    default:
-      return ec_state::EC_STATE_NONE;
-  }
-}
-static constexpr EthercatDeviceState map_from_soem_device_state(const ec_state state)
-{
-  switch (state) {
-    case ec_state::EC_STATE_NONE:
-      return EthercatDeviceState::None;
-    case ec_state::EC_STATE_INIT:
-      return EthercatDeviceState::Init;
-    case ec_state::EC_STATE_PRE_OP:
-      return EthercatDeviceState::PreOp;
-    case ec_state::EC_STATE_BOOT:
-      return EthercatDeviceState::Boot;
-    case ec_state::EC_STATE_SAFE_OP:
-      return EthercatDeviceState::SafeOp;
-    case ec_state::EC_STATE_OPERATIONAL:
-      return EthercatDeviceState::Operational;
-
-    default:
-      return EthercatDeviceState::None;
-  }
 }
 
 struct EthercatBus::BackendImpl
@@ -195,6 +125,9 @@ struct EthercatBus::BackendImpl
     if (!has_device_on_bus(device_id)) {
       throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
     }
+    // Discard currently existing mailbox events that are unrelated to this access
+    drain_mailbox_events();
+
     // Depending on the current bus state we need to handle SDO access differently
     // When the bus is up and running we should enqueue and SDO access into the main update thread
     // otherwise we can simply directly perform the operation
@@ -204,12 +137,18 @@ struct EthercatBus::BackendImpl
     int actual_size = requested_size;
     const int wkc =
         ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
-    if (wkc <= 0) {
+
+    const MailboxAccess access{ device_id, MailboxProtocol::CoE, index, sub_index };
+    auto [event, failed] = finish_mailbox_access(access, wkc);
+
+    if (failed) {
       logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                               << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                               << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
                               << static_cast<uint16_t>(sub_index) << ")." << std::endl;
-      return SDOReadResult{ .success = false, .actual_size_read = actual_size, .working_counter = wkc };
+      return SDOReadResult{
+        .success = false, .actual_size_read = actual_size, .working_counter = wkc, .mailbox_diagnostics = event
+      };
     }
 
     if (check_size && requested_size != actual_size) {
@@ -220,53 +159,15 @@ struct EthercatBus::BackendImpl
                               << ")." << std::endl;
       throw BackendError("SDORead size mismatch", Backend::SOEM, actual_size);
     }
-    return SDOReadResult{ .success = true, .actual_size_read = actual_size, .working_counter = wkc };
+    return SDOReadResult{
+      .success = true, .actual_size_read = actual_size, .working_counter = wkc, .mailbox_diagnostics = event
+    };
   }
   void read_sdo_untyped_async(const SDOReadCallback& cb, std::span<uint8_t> data, const DeviceId device_id,
                               const SDOIndex index, const SDOSubIndex sub_index = 0, bool check_size = true,
                               const int timeout = EC_TIMEOUTRXM)
   {
-    // NOTE we only report some errors as exceptions as for example working counter too low can happen also in normal
-    // operation In this case simply false is returned
-    std::lock_guard<std::mutex> lock(mailbox_mutex_);
-    // Only perform operations on an initialized bus
-    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown) {
-      throw BackendError("Backend not initialized - cannot perform SDO operations", Backend::SOEM);
-    }
-    // And only on devices that are actually on the bus
-    if (!has_device_on_bus(device_id)) {
-      throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
-    }
-    // Depending on the current bus state we need to handle SDO access differently
-    // When the bus is up and running we should enqueue and SDO access into the main update thread
-    // otherwise we can simply directly perform the operation
-    const int requested_size = static_cast<int>(data.size());
-
-    // Directly perform the read
-    int actual_size = requested_size;
-    const int wkc =
-        ecx_SDOread(&context_.context, device_id, index, sub_index, FALSE, &actual_size, data.data(), timeout);
-    SDOReadResult result{};
-    if (wkc <= 0) {
-      logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
-                              << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
-                              << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                              << static_cast<uint16_t>(sub_index) << ")." << std::endl;
-      result = SDOReadResult{ .success = false, .actual_size_read = actual_size, .working_counter = wkc };
-    } else {
-      result = SDOReadResult{ .success = true, .actual_size_read = actual_size, .working_counter = wkc };
-    }
-
-    if (check_size && requested_size != actual_size) {
-      logging::error(logger_) << "Device id  " << device_id << ": Size mismatch (expected " << requested_size
-                              << " bytes, read " << actual_size << " bytes) for reading SDO (ID: 0x"
-                              << std::setfill('0') << std::setw(4) << std::hex << index << ", SID 0x"
-                              << std::setfill('0') << std::setw(2) << std::hex << static_cast<uint16_t>(sub_index)
-                              << ")." << std::endl;
-      throw BackendError("SDORead size mismatch", Backend::SOEM, actual_size);
-    }
-    // In case of success just call the callback
-    // NOTE this is in the same thread now
+    const auto result = read_sdo_untyped(data, device_id, index, sub_index, check_size, timeout);
     cb(data, device_id, index, sub_index, result);
   }
 
@@ -283,46 +184,29 @@ struct EthercatBus::BackendImpl
       throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
     }
 
+    // Discard currently existing mailbox events that are unrelated to this access
+    drain_mailbox_events();
     // Directly perform the write
     const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, static_cast<int>(data.size()),
                                  const_cast<uint8_t*>(data.data()), timeout);
-    if (wkc <= 0) {
+
+    const MailboxAccess access{ device_id, MailboxProtocol::CoE, index, sub_index };
+    auto [event, failed] = finish_mailbox_access(access, wkc);
+    if (failed) {
       logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                               << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                               << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
                               << static_cast<uint16_t>(sub_index) << ")." << std::endl;
 
-      return SDOWriteResult{ .success = false, .working_counter = wkc };
+      return SDOWriteResult{ .success = false, .working_counter = wkc, .mailbox_diagnostics = event };
     }
-    return SDOWriteResult{ .success = true, .working_counter = wkc };
+    return SDOWriteResult{ .success = true, .working_counter = wkc, .mailbox_diagnostics = event };
   }
 
   void write_sdo_untyped_async(const SDOWriteCallback& cb, std::span<const uint8_t> data, const DeviceId device_id,
                                const SDOIndex index, const SDOSubIndex sub_index = 0, const int timeout = EC_TIMEOUTRXM)
   {
-    std::lock_guard<std::mutex> lock(mailbox_mutex_);
-    // Only perform operations on an initialized bus
-    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown) {
-      throw BackendError("Backend not initialized - cannot perform SDO operations", Backend::SOEM);
-    }
-    // And only on devices that are actually on the bus
-    if (!has_device_on_bus(device_id)) {
-      throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
-    }
-
-    // Directly perform the write
-    const int wkc = ecx_SDOwrite(&context_.context, device_id, index, sub_index, FALSE, static_cast<int>(data.size()),
-                                 const_cast<uint8_t*>(data.data()), timeout);
-    SDOWriteResult result{};
-    if (wkc <= 0) {
-      logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
-                              << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
-                              << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                              << static_cast<uint16_t>(sub_index) << ")." << std::endl;
-      result = SDOWriteResult{ .success = false, .working_counter = wkc };
-    } else {
-      result = SDOWriteResult{ .success = true, .working_counter = wkc };
-    }
+    const auto result = write_sdo_untyped(data, device_id, index, sub_index, timeout);
     cb(device_id, index, sub_index, result);
   }
 
@@ -703,10 +587,23 @@ struct EthercatBus::BackendImpl
       throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
     }
 
+    // Discard anything left over from an earlier access
+    drain_mailbox_events();
+
     const int wkc =
         ecx_FOEwrite(&context_.context, device_id, const_cast<char*>(file_name.c_str()), 0,
                      static_cast<int>(data.size()), const_cast<uint8_t*>(data.data()), EC_TIMEOUTRXM * 1000);
-    return FoEWriteResult{ .success = wkc > 0, .working_counter = wkc };
+
+    // FoE carries no index/sub_index - the drain's optional checks skip those fields.
+    const MailboxAccess access{ device_id, MailboxProtocol::FoE };
+    auto [event, failed] = finish_mailbox_access(access, wkc);
+
+    if (failed) {
+      logging::error(logger_) << "Device id " << device_id << ": FoE write of \"" << file_name << "\" failed, wkc "
+                              << wkc << ": " << (event ? event->description : "unknown reason") << std::endl;
+    }
+
+    return FoEWriteResult{ .success = !failed, .working_counter = wkc, .mailbox_diagnostics = event };
   }
   FoEReadResult foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
   {
@@ -720,15 +617,31 @@ struct EthercatBus::BackendImpl
       throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
     }
 
+    // Discard anything left over from an earlier access
+    drain_mailbox_events();
+
     int actual_size = static_cast<int>(buffer.size());
     const int wkc = ecx_FOEread(&context_.context, device_id, const_cast<char*>(file_name.c_str()), 0, &actual_size,
                                 buffer.data(), EC_TIMEOUTRXM * 1000);
 
-    return FoEReadResult{ .success = wkc > 0,
+    const MailboxAccess access{ device_id, MailboxProtocol::FoE };
+    auto [event, failed] = finish_mailbox_access(access, wkc);
+
+    if (failed) {
+      logging::error(logger_) << "Device id " << device_id << ": FoE read of \"" << file_name << "\" failed, wkc "
+                              << wkc << ": " << (event ? event->description : "unknown reason") << std::endl;
+      return FoEReadResult{ .success = false,
+                            .working_counter = wkc,
+                            .actual_read_size = 0,
+                            .data = std::span(buffer.data(), 0),
+                            .mailbox_diagnostics = event };
+    }
+
+    return FoEReadResult{ .success = true,
                           .working_counter = wkc,
-                          .actual_read_size = wkc > 0 ? static_cast<std::size_t>(actual_size) : 0,
-                          .data = wkc > 0 ? std::span(buffer.data(), static_cast<std::size_t>(actual_size)) :
-                                            std::span(buffer.data(), 0) };
+                          .actual_read_size = static_cast<std::size_t>(actual_size),
+                          .data = std::span(buffer.data(), static_cast<std::size_t>(actual_size)),
+                          .mailbox_diagnostics = event };
   }
   bool set_device_target_state(const DeviceId device_id, ec_state target_state)
   {
@@ -838,6 +751,8 @@ private:
   mutable std::mutex pdo_update_mutex_;
   // SDO call sync
   std::mutex mailbox_mutex_;
+  MailboxStatus mailbox_status_{};
+  mutable std::mutex mailbox_status_mutex_;
   // State change related
   std::mutex state_mutex_;
 
@@ -906,12 +821,19 @@ private:
       device->update_read(now);
     }
 
-    update_diagnostics_fast(wkc, expected_wkc);
+    // On older systems already this diagnostics has a measurable impact
+    if (is_diagnostics_enabled(params_.diagnostics.pdo_diagnostics)) {
+      update_diagnostics_fast(wkc, expected_wkc);
+    }
     return update_rate_correction_factor;
   }
 
   bool internal_service_update()
   {
+    if (std::unique_lock<std::mutex> lock(mailbox_mutex_, std::try_to_lock); lock.owns_lock()) {
+      drain_mailbox_events();
+    }
+
     // First thing after startup is to bring the devices into operational state
     if (get_bus_state() == BusState::Activated) {
       if (!activation_start_tp_) {
@@ -952,13 +874,11 @@ private:
         if (is_diagnostics_enabled(params_.diagnostics.esc_port_diagnostics)) {
           update_diagnostics_slow();
         }
-        return true;
-      } else {
-        // indicate that the service thread has nothing todo anymore and may be stopped
-        return false;
       }
     }
-    return true;
+    return is_diagnostics_enabled(params_.diagnostics.mailbox_diagnostics) ||
+           is_diagnostics_enabled(params_.diagnostics.esc_diagnostics) ||
+           is_diagnostics_enabled(params_.diagnostics.esc_port_diagnostics);
   }
 
   void update_diagnostics_fast(const int wkc, const int expected_wkc)
@@ -1029,6 +949,90 @@ private:
       status.ports[p].rx_errors = rx_err[p * 2 + 1];
       status.ports[p].lost_links = lost_link[p];
     }
+  }
+
+  /// Empties SOEM's error list. The first event attributable to `acc` is returned,
+  /// everything else is logged and counted. Call with mailbox_mutex_ held.
+  std::optional<MailboxEvent> drain_mailbox_events(const MailboxAccess& acc)
+  {
+    std::optional<MailboxEvent> attributed{};
+    ec_errort raw{};
+    while (ecx_poperror(&context_.context, &raw)) {
+      MailboxEvent ev = make_mailbox_event(raw);
+
+      // An event belongs to the in-flight access if it is solicited (emergencies never
+      // are), comes from the right device, and does not contradict it on any field the
+      // event actually carries - FoE events carry no index/sub_index at all.
+      const bool belongs_to_access = ev.kind != MailboxEventKind::Emergency && ev.device_id == acc.device_id &&
+                                     (ev.protocol == MailboxProtocol::Unknown || ev.protocol == acc.protocol) &&
+                                     (!ev.index || !acc.index || *ev.index == *acc.index) &&
+                                     (!ev.sub_index || !acc.sub_index || *ev.sub_index == *acc.sub_index);
+
+      if (!attributed && belongs_to_access) {
+        attributed = std::move(ev);
+        continue;
+      }
+      report_mailbox_event(ev);
+    }
+    return attributed;
+  }
+
+  /// Unattributed drain - clears stale entries so the next access starts clean,
+  /// and keeps SOEM's fixed-size elist from overflowing. Call with mailbox_mutex_ held.
+  void drain_mailbox_events()
+  {
+    ec_errort raw{};
+    while (ecx_poperror(&context_.context, &raw)) {
+      report_mailbox_event(make_mailbox_event(raw));
+    }
+  }
+
+  void report_mailbox_event(const MailboxEvent& ev)
+  {
+    {
+      std::lock_guard<std::mutex> lock(mailbox_status_mutex_);
+      switch (ev.kind) {
+        case MailboxEventKind::Emergency:
+          mailbox_status_.mailbox_emergencies += 1;
+          break;
+        case MailboxEventKind::Timeout:
+          mailbox_status_.mailbox_timeouts += 1;
+          break;
+        case MailboxEventKind::Unknown:
+        case MailboxEventKind::Abort:
+        case MailboxEventKind::ProtocolViolation:
+        case MailboxEventKind::MailboxLayerError:
+        case MailboxEventKind::BufferTooSmall:
+        case MailboxEventKind::NotFound:
+          mailbox_status_.mailbox_aborts += 1;
+          break;
+      }
+    }
+
+    if (!is_diagnostics_enabled(params_.diagnostics.mailbox_diagnostics)) {
+      return;
+    }
+    // Emergencies are the one kind nobody can observe from a result struct,
+    // so log them at Basic; the rest only under Tracing.
+    const bool always_log = ev.kind == MailboxEventKind::Emergency;
+    if (!always_log && params_.diagnostics.mailbox_diagnostics != DiagnosticsLevel::Tracing) {
+      return;
+    }
+
+    auto&& sink = (ev.severity == MailboxEventSeverity::Info) ? logging::info(logger_) : logging::warning(logger_);
+    sink << "Mailbox event (device " << ev.device_id << ", " << ev.description << ", code 0x" << std::hex << ev.code
+         << std::dec << ")" << std::endl;
+  }
+  std::pair<std::optional<MailboxEvent>, bool> finish_mailbox_access(const MailboxAccess& acc, const int wkc)
+  {
+    auto event = drain_mailbox_events(acc);
+    if (wkc <= 0 && !event) {
+      event = make_timeout_event(acc);
+      report_mailbox_event(*event);
+    }
+    // An attributed event is never an Emergency by construction, so severity alone decides.
+    const bool failed = wkc <= 0 || (event && event->severity == MailboxEventSeverity::Error);
+    return { std::move(event), failed };
   }
 };
 

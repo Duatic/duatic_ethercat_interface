@@ -40,7 +40,7 @@ enum class DiagnosticsLevel
   Off = 0,
   // Basic diagnostics is enabled
   Basic = 1,
-  // Specific diagnostic events are also logged
+  // Specific diagnostic events are also stored for later analysis (tracing)
   Tracing = 2
 };
 
@@ -163,6 +163,13 @@ struct BusStatus
   // Cumulative number of cycles where the returned working counter did
   // not match the expected value for the process data exchanged.
   uint64_t wkc_mismatches = 0;
+};
+
+struct MailboxStatus
+{
+  uint64_t mailbox_aborts = 0;
+  uint64_t mailbox_timeouts = 0;
+  uint64_t mailbox_emergencies = 0;
 };
 
 struct ExecutorTimingDiagnostics
