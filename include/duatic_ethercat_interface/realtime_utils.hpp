@@ -27,6 +27,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <unistd.h>
+#include <csignal>
 
 #include <duatic_message_logger/log.hpp>
 
@@ -97,5 +98,58 @@ inline bool set_realtime_priority(pthread_t thread, int priority = 60, int cpu_c
 inline bool set_realtime_priority(int priority = 60, int cpu_core = -1, int scheduler = SCHED_FIFO)
 {
   return set_realtime_priority(pthread_self(), priority, cpu_core, scheduler);
+}
+
+/**
+ * @brief block_signals_current_thread - block asynchronous signal delivery to the calling thread
+ * @param previous_mask - optional out parameter receiving the mask in effect before the call,
+ *        for later restoration via restore_signal_mask. Pass nullptr if not needed.
+ *
+ * A thread with signals blocked never returns EINTR from a blocking syscall, which removes a
+ * source of jitter from cyclic real-time loops. Some other thread in the process must then
+ * handle termination signals - the usual pattern is one dedicated thread calling sigwait().
+ *
+ * Synchronous signals are deliberately left unblocked: they are raised by the faulting
+ * instruction itself, blocking them is undefined behaviour, and on Linux the kernel forces
+ * the default action regardless, so a genuine fault would kill the process without reaching
+ * a handler or a debugger.
+ *
+ * SIGKILL and SIGSTOP cannot be blocked; they are silently ignored in the requested set.
+ *
+ * @return true in case of success, false in case of error
+ */
+inline bool block_signals_current_thread(sigset_t* previous_mask = nullptr)
+{
+  sigset_t set;
+  if (sigfillset(&set) != 0) {
+    logging::error() << "Failed to build the signal set. errno: " << errno;
+    return false;
+  }
+
+  // list of still allowed signals
+  for (const int sig : { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGTRAP, SIGSYS, SIGABRT }) {
+    sigdelset(&set, sig);
+  }
+
+  // pthread_sigmask reports failure through its return value and does not set errno
+  if (const auto ec = pthread_sigmask(SIG_BLOCK, &set, previous_mask); ec != 0) {
+    logging::error() << "Failed to block signals for the current thread. ec: " << ec;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * @brief restore_signal_mask - reinstate a mask previously captured by block_signals_current_thread
+ * @param mask - the mask to install for the calling thread
+ * @return true in case of success, false in case of error
+ */
+inline bool restore_signal_mask(const sigset_t& mask)
+{
+  if (const auto ec = pthread_sigmask(SIG_SETMASK, &mask, nullptr); ec != 0) {
+    logging::error() << "Failed to restore the signal mask of the current thread. ec: " << ec;
+    return false;
+  }
+  return true;
 }
 }  // namespace duatic::ethercat_interface
