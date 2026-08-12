@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <utility>
 
 #include "duatic_ethercat_interface/types.hpp"
 
@@ -50,37 +51,156 @@ struct SDOEntry
   std::vector<SDOSubEntry> sub_entries;
 };
 
+/**
+ * @brief ObjectDictionary - representation of an od description dump from a device
+ */
 class ObjectDictionary
 {
 public:
-  explicit ObjectDictionary(const std::vector<SDOEntry>& entries) : sdo_entries_(entries)
+  ObjectDictionary() = default;
+
+  /**
+   * @brief construct from a set of entries
+   * @param entries - taken by value so callers can move a temporary in
+   */
+  explicit ObjectDictionary(std::vector<SDOEntry> entries) : sdo_entries_(std::move(entries))
   {
-    for (const auto& e : sdo_entries_) {
-      sdo_entries_by_index_[e.index] = &e;
-      sdo_entries_by_name_[e.name] = &e;
-    }
+    rebuild_lookup();
   }
 
+  /**
+   * @brief copy ctor - deep-copies the storage, then rebuilds the lookup maps
+   */
+  ObjectDictionary(const ObjectDictionary& other) : sdo_entries_(other.sdo_entries_)
+  {
+    rebuild_lookup();
+  }
+
+  /**
+   * @brief copy assignment
+   */
+  ObjectDictionary& operator=(const ObjectDictionary& other)
+  {
+    if (this != &other) {
+      sdo_entries_ = other.sdo_entries_;
+      rebuild_lookup();
+    }
+    return *this;
+  }
+
+  /**
+   * @brief move ctor - the vector move transfers the buffer, so the cached
+   *        pointers remain valid and the maps can be moved as-is
+   */
+  ObjectDictionary(ObjectDictionary&& other) noexcept
+    : sdo_entries_(std::move(other.sdo_entries_))
+    , sdo_entries_by_index_(std::move(other.sdo_entries_by_index_))
+    , sdo_entries_by_name_(std::move(other.sdo_entries_by_name_))
+  {
+    other.sdo_entries_by_index_.clear();
+    other.sdo_entries_by_name_.clear();
+  }
+
+  /**
+   * @brief move assignment
+   */
+  ObjectDictionary& operator=(ObjectDictionary&& other) noexcept
+  {
+    if (this != &other) {
+      sdo_entries_ = std::move(other.sdo_entries_);
+      sdo_entries_by_index_ = std::move(other.sdo_entries_by_index_);
+      sdo_entries_by_name_ = std::move(other.sdo_entries_by_name_);
+
+      other.sdo_entries_by_index_.clear();
+      other.sdo_entries_by_name_.clear();
+    }
+    return *this;
+  }
+
+  ~ObjectDictionary() = default;
+
+  /**
+   * @brief has_index - check if the od contains the given index
+   * @param index - sdo index to check
+   * @return true if index exists, false if not
+   */
   bool has_index(const SDOIndex index) const
   {
     return sdo_entries_by_index_.contains(index);
   }
 
+  /**
+   * @brief has_name - check if the od contains an entry with the given name
+   * @param name - sdo entry name to check
+   * @return true if the name exists, false if not
+   */
+  bool has_name(const std::string& name) const
+  {
+    return sdo_entries_by_name_.contains(name);
+  }
+
+  /**
+   * @brief at - obtain entry based on the index
+   * @param index - sdo index to obtain the description of
+   * @throw std::out_of_range if index is not available
+   */
   const SDOEntry& at(const SDOIndex index) const
   {
     return *sdo_entries_by_index_.at(index);
   }
-  const SDOEntry& at(const std::string& name)
+
+  /**
+   * @brief at - obtain entry based on its name
+   * @param name - sdo index name
+   * @throw std::out_of_range if name is not available
+   */
+  const SDOEntry& at(const std::string& name) const
   {
     return *sdo_entries_by_name_.at(name);
   }
 
+  /**
+   * @brief entries - obtain all entries
+   */
   const auto& entries() const
   {
     return sdo_entries_;
   }
 
+  /**
+   * @brief size - number of entries in the dictionary
+   */
+  std::size_t size() const
+  {
+    return sdo_entries_.size();
+  }
+
+  /**
+   * @brief empty - true if the dictionary holds no entries
+   */
+  bool empty() const
+  {
+    return sdo_entries_.empty();
+  }
+
 private:
+  /**
+   * @brief rebuild_lookup - repopulate both maps from the current storage
+   */
+  void rebuild_lookup()
+  {
+    sdo_entries_by_index_.clear();
+    sdo_entries_by_name_.clear();
+
+    sdo_entries_by_index_.reserve(sdo_entries_.size());
+    sdo_entries_by_name_.reserve(sdo_entries_.size());
+
+    for (const auto& e : sdo_entries_) {
+      sdo_entries_by_index_.emplace(e.index, &e);
+      sdo_entries_by_name_.emplace(e.name, &e);
+    }
+  }
+
   std::vector<SDOEntry> sdo_entries_;
   std::unordered_map<SDOIndex, const SDOEntry*> sdo_entries_by_index_;
   std::unordered_map<std::string, const SDOEntry*> sdo_entries_by_name_;

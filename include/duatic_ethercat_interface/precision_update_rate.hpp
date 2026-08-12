@@ -42,7 +42,7 @@ constexpr int64_t sleep_early_stop_ns = 50000;
  * @param ts2 The second timespec to compare.
  * @return true if ts1 represents an earlier time than ts2, false otherwise.
  */
-inline bool timespec_smaller_than(const timespec& ts1, const timespec& ts2)
+inline constexpr bool timespec_smaller_than(const timespec& ts1, const timespec& ts2)
 {
   return (ts1.tv_sec < ts2.tv_sec || (ts1.tv_sec == ts2.tv_sec && ts1.tv_nsec < ts2.tv_nsec));
 }
@@ -52,9 +52,9 @@ inline bool timespec_smaller_than(const timespec& ts1, const timespec& ts2)
  * @param b The timespec to subtract.
  * @return The difference (a - b) in nanoseconds.
  */
-inline int64_t timespec_diff_ns(const timespec& a, const timespec& b)
+inline constexpr int64_t timespec_diff_ns(const timespec& a, const timespec& b)
 {
-  return (int64_t)(a.tv_sec - b.tv_sec) * billion + (a.tv_nsec - b.tv_nsec);
+  return (a.tv_sec - b.tv_sec) * billion + (a.tv_nsec - b.tv_nsec);
 }
 /**
  * @brief Adds a specified number of nanoseconds to a timespec structure.
@@ -62,7 +62,7 @@ inline int64_t timespec_diff_ns(const timespec& a, const timespec& b)
  * @param ns The number of nanoseconds to add (can be negative).
  * @return A new timespec representing the adjusted time.
  */
-inline struct timespec timespec_add_ns(timespec t, const int64_t ns)
+inline constexpr struct timespec timespec_add_ns(timespec t, const int64_t ns)
 {
   t.tv_sec += ns / billion;
   t.tv_nsec += ns % billion;

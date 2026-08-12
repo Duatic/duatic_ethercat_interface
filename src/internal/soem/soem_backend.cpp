@@ -84,7 +84,7 @@ struct EthercatBus::BackendImpl
       throw BackendError("No devices found on the bus", Backend::SOEM, device_count);
     }
 
-    // Needed for diagnsotics
+    // Needed for diagnostics
     if (latest_diagnostics_.slaves.size() != static_cast<std::size_t>(context_.ecatSlavecount_)) {
       latest_diagnostics_.slaves.resize(static_cast<std::size_t>(context_.ecatSlavecount_));
     }
@@ -590,9 +590,8 @@ struct EthercatBus::BackendImpl
     // Discard anything left over from an earlier access
     drain_mailbox_events();
 
-    const int wkc =
-        ecx_FOEwrite(&context_.context, device_id, const_cast<char*>(file_name.c_str()), 0,
-                     static_cast<int>(data.size()), const_cast<uint8_t*>(data.data()), EC_TIMEOUTRXM * 1000);
+    const int wkc = ecx_FOEwrite(&context_.context, device_id, const_cast<char*>(file_name.c_str()), 0,
+                                 static_cast<int>(data.size()), const_cast<uint8_t*>(data.data()), EC_TIMEOUTRXM);
 
     // FoE carries no index/sub_index - the drain's optional checks skip those fields.
     const MailboxAccess access{ device_id, MailboxProtocol::FoE };
@@ -622,7 +621,7 @@ struct EthercatBus::BackendImpl
 
     int actual_size = static_cast<int>(buffer.size());
     const int wkc = ecx_FOEread(&context_.context, device_id, const_cast<char*>(file_name.c_str()), 0, &actual_size,
-                                buffer.data(), EC_TIMEOUTRXM * 1000);
+                                buffer.data(), EC_TIMEOUTRXM);
 
     const MailboxAccess access{ device_id, MailboxProtocol::FoE };
     auto [event, failed] = finish_foe_access(access, wkc);
@@ -668,7 +667,7 @@ struct EthercatBus::BackendImpl
                                            const RegisterAddress address, [[maybe_unused]] bool check_size)
   {
     // Only perform operations on an initialized bus
-    if (get_bus_state() == BusState::PreInit) {
+    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown) {
       throw BackendError("Backend not initialized - cannot perform register operations", Backend::SOEM);
     }
     // And only on devices that are actually on the bus
@@ -695,7 +694,7 @@ struct EthercatBus::BackendImpl
                                              const RegisterAddress address)
   {
     // Only perform operations on an initialized bus
-    if (get_bus_state() == BusState::PreInit) {
+    if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown) {
       throw BackendError("Backend not initialized - cannot perform register operations", Backend::SOEM);
     }
     // And only on devices that are actually on the bus
