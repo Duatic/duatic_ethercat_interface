@@ -39,21 +39,33 @@ void EthercatDeviceBase::configure(EthercatBus* bus, DeviceInfo device_info)
 
 ObjectDictionary EthercatDeviceBase::read_od(bool full_read) const
 {
+  if (!bus_) {
+    throw std::invalid_argument("Bus had not been initialized yet");
+  }
   return bus_->read_od(get_device_id(), full_read);
 }
 
 bool EthercatDeviceBase::change_device_state(const EthercatDeviceState target_state, bool blocking)
 {
+  if (!bus_) {
+    throw std::invalid_argument("Bus had not been initialized yet");
+  }
   return bus_->change_device_state(get_device_id(), target_state, blocking);
 }
 
 FoEWriteResult EthercatDeviceBase::foe_write(const std::string& file_name, std::span<const uint8_t> data)
 {
+  if (!bus_) {
+    throw std::invalid_argument("Bus had not been initialized yet");
+  }
   return bus_->foe_write(get_device_id(), file_name, data);
 }
 
 FoEReadResult EthercatDeviceBase::foe_read(const std::string& file_name, std::span<uint8_t> buffer)
 {
+  if (!bus_) {
+    throw std::invalid_argument("Bus had not been initialized yet");
+  }
   return bus_->foe_read(get_device_id(), file_name, buffer);
 }
 

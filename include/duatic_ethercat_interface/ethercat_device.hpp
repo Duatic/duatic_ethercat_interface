@@ -53,16 +53,6 @@ public:
     FunctionPtr on_pre_shutdown;
     FunctionPtr on_post_shutdown;
   };
-  /**
-   * @brief Helper enum to track if the device has already been configured by the bus
-   * and if not handle it accordingly
-   */
-  enum class InstanceState
-  {
-    Created,
-    BusConfigured,
-    PdoConfigured
-  };
 
   explicit EthercatDeviceBase(const Hooks& hooks = {});
   virtual ~EthercatDeviceBase() = default;
@@ -175,12 +165,18 @@ public:
   template <typename T>
   std::optional<T> sdo_read(const SDOIndex index, const SDOSubIndex sub_index = 0)
   {
+    if (!bus_) {
+      throw std::invalid_argument("Bus had not been initialized yet");
+    }
     return bus_->sdo_read<T>(get_device_id(), index, sub_index);
   }
 
   template <typename T>
   bool sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index = 0)
   {
+    if (!bus_) {
+      throw std::invalid_argument("Bus had not been initialized yet");
+    }
     return bus_->sdo_write<T>(get_device_id(), value, index, sub_index);
   }
 
