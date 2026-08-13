@@ -34,6 +34,7 @@
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 #include "duatic_ethercat_interface/ethercat_bus.hpp"
+#include "duatic_ethercat_interface/priorty_inheriting_mutex.hpp"
 
 namespace duatic::ethercat_interface
 {
@@ -252,7 +253,7 @@ public:
     if (out.size() != rx_pdo_.size()) {
       throw DeviceConfigurationError("Size mismatch");
     }
-    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+    std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
     std::memcpy(out.data(), rx_pdo_.data(), out.size());
   }
   /**
@@ -269,7 +270,7 @@ public:
       throw DeviceConfigurationError("RX PDO size mismatch");
     }
 
-    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+    std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
     std::memcpy(rx_pdo_.data(), rx.data(), rx.size());
   }
   /**
@@ -285,7 +286,7 @@ public:
     if (out.size() != tx_pdo_.size()) {
       throw DeviceConfigurationError("Size mismatch");
     }
-    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+    std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
     std::memcpy(out.data(), tx_pdo_.data(), out.size());
   }
 
@@ -370,7 +371,7 @@ private:
   HighPrecisionTimeStamp rx_pdo_last_write_time_;
   GenericTXPDO tx_pdo_;
   HighPrecisionTimeStamp tx_pdo_last_read_time_;
-  mutable std::mutex pdo_update_mutex_;
+  mutable PriorityInheritingMutex pdo_update_mutex_;
 };
 
 }  // namespace duatic::ethercat_interface

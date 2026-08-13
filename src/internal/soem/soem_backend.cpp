@@ -36,6 +36,7 @@
 #include "duatic_ethercat_interface/distributed_clock_sync.hpp"
 
 #include "duatic_ethercat_interface/object_dictionary.hpp"
+#include "duatic_ethercat_interface/priorty_inheriting_mutex.hpp"
 
 #include "duatic_ethercat_interface/internal/backend_impl.hpp"
 #include "duatic_ethercat_interface/internal/soem/soem_context.hpp"
@@ -533,7 +534,7 @@ struct EthercatBus::BackendImpl
 
     std::vector<uint8_t> result(size, 0);
 
-    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+    std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
     std::memcpy(result.data(), context_.ecatSlavelist_[device_id].outputs, size);
 
     return result;
@@ -553,7 +554,7 @@ struct EthercatBus::BackendImpl
       throw BackendError("PDO size mismatch - cannot assign", Backend::SOEM);
     }
 
-    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+    std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
     std::memcpy(context_.ecatSlavelist_[device_id].outputs, data.data(), size);
   }
 
@@ -571,7 +572,7 @@ struct EthercatBus::BackendImpl
       throw BackendError("Critical array size mismatch when reading tx pdo", Backend::SOEM);
     }
 
-    std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+    std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
     std::memcpy(data.data(), context_.ecatSlavelist_[device_id].inputs, size);
   }
 
@@ -747,7 +748,7 @@ private:
   std::vector<std::shared_ptr<EthercatDeviceBase>> devices_;
 
   // Everything update thread related
-  mutable std::mutex pdo_update_mutex_;
+  mutable PriorityInheritingMutex pdo_update_mutex_;
   // SDO call sync
   std::mutex mailbox_mutex_;
   MailboxStatus mailbox_status_{};
@@ -797,7 +798,7 @@ private:
     int expected_wkc{ 0 };
 
     {  // Important to lock after update_write(), otherwise update_write will deadlock
-      std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+      std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
       if (ecx_send_processdata(&context_.context) <= 0) {
         logging::error(logger_) << "Failed to send process data" << std::endl;
       }

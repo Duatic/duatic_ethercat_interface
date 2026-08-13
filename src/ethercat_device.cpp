@@ -71,13 +71,13 @@ FoEReadResult EthercatDeviceBase::foe_read(const std::string& file_name, std::sp
 
 void GenericEthercatDevice::update_write(const HighPrecisionTimeStamp& tp)
 {
-  std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+  std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
   bus_->write_rx_pdo(get_device_id(), rx_pdo_);
   rx_pdo_last_write_time_ = tp;
 }
 void GenericEthercatDevice::update_read(const HighPrecisionTimeStamp& tp)
 {
-  std::lock_guard<std::mutex> lock(pdo_update_mutex_);
+  std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
   bus_->read_tx_pdo(get_device_id(), tx_pdo_);
   tx_pdo_last_read_time_ = tp;
 };
