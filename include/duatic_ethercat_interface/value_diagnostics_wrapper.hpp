@@ -25,10 +25,10 @@
 #pragma once
 
 #include <optional>
-#include <algorithm>
 #include <utility>
 #include <functional>
 #include <type_traits>
+#include <algorithm>
 
 namespace duatic::ethercat_interface
 {
@@ -62,7 +62,6 @@ public:
     return m_value.has_value();
   }
 
-  /// Disabled for T = bool: `if (v)` as would be ambiguous
   [[nodiscard]] explicit operator bool() const noexcept requires(!std::is_same_v<std::remove_cv_t<T>, bool>)
   {
     return m_value.has_value();

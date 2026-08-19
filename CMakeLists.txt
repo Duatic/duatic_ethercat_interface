@@ -92,8 +92,20 @@ if(BUILD_TESTING)
   ament_add_gtest(test_precision_update_rate
     test/test_precision_update_rate.cpp
   )
+  ament_add_gtest(test_od
+    test/test_od.cpp
+  )
+  ament_add_gtest(test_value_diagnostics_wrapper
+    test/test_value_diagnostics_wrapper.cpp
+  )
 
   target_link_libraries(test_precision_update_rate
+    duatic_ethercat_interface
+  )
+  target_link_libraries(test_od
+    duatic_ethercat_interface
+  )
+  target_link_libraries(test_value_diagnostics_wrapper
     duatic_ethercat_interface
   )
 endif()
