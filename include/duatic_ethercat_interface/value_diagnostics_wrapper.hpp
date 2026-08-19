@@ -27,9 +27,16 @@
 #include <optional>
 #include <algorithm>
 #include <utility>
+#include <functional>
+#include <type_traits>
 
 namespace duatic::ethercat_interface
 {
+
+/**
+ * ValueDiagnosticsWrapper - a wrapper around a read value<T> together with additional diagnostics data
+ * @note even if the read was successfull there might not necessarily be a value inside
+ */
 template <typename T, typename DiagnosticsT>
 class [[nodiscard]] ValueDiagnosticsWrapper
 {
@@ -37,17 +44,18 @@ public:
   using value_type = T;
   using diagnostics_type = DiagnosticsT;
 
+  static_assert(std::is_nothrow_move_constructible_v<DiagnosticsT>);
+
   ValueDiagnosticsWrapper() = default;
 
   explicit ValueDiagnosticsWrapper(DiagnosticsT diagnostics) : m_diagnostics{ std::move(diagnostics) }
   {
   }
 
-  ValueDiagnosticsWrapper(DiagnosticsT diagnostics, T value) : m_diagnostics{ std::move(diagnostics) }, m_value{ value }
+  ValueDiagnosticsWrapper(DiagnosticsT diagnostics, T value)
+    : m_diagnostics{ std::move(diagnostics) }, m_value{ std::move(value) }
   {
   }
-
-  // --- optional-like interface ---
 
   [[nodiscard]] bool has_value() const noexcept
   {
@@ -60,13 +68,17 @@ public:
     return m_value.has_value();
   }
 
-  const T& operator*() const noexcept
+  const T& operator*() const& noexcept
   {
     return *m_value;
   }
-  T& operator*() noexcept
+  T& operator*() & noexcept
   {
     return *m_value;
+  }
+  T&& operator*() && noexcept
+  {
+    return *std::move(m_value);
   }
 
   const T* operator->() const noexcept
@@ -78,21 +90,29 @@ public:
     return m_value.operator->();
   }
 
-  const T& value() const
+  const T& value() const&
   {
     return m_value.value();
   }
-  T& value()
+  T& value() &
   {
     return m_value.value();
   }
-
-  [[nodiscard]] T value_or(T fallback) const noexcept
+  T&& value() &&
   {
-    return m_value.value_or(fallback);
+    return std::move(m_value).value();
   }
 
-  // --- diagnostics (DiagnosticsT is *not* assumed trivial) ---
+  template <typename U>
+  [[nodiscard]] T value_or(U&& fallback) const&
+  {
+    return m_value.value_or(std::forward<U>(fallback));
+  }
+  template <typename U>
+  [[nodiscard]] T value_or(U&& fallback) &&
+  {
+    return std::move(m_value).value_or(std::forward<U>(fallback));
+  }
 
   [[nodiscard]] const DiagnosticsT& diagnostics() const& noexcept
   {
@@ -103,30 +123,36 @@ public:
     return std::move(m_diagnostics);
   }
 
-  // --- interop with plain std::optional ---
-
-  /// Implicit so existing `std::optional<T> x = read(...);` call sites keep
-  /// compiling unchanged. Deliberately discards the diagnostics.
-  [[nodiscard]] operator std::optional<T>() const noexcept
+  [[nodiscard]] const std::optional<T>& as_optional() const& noexcept
   {
     return m_value;
   }
-
-  [[nodiscard]] const std::optional<T>& as_optional() const noexcept
+  [[nodiscard]] std::optional<T> as_optional() &&
   {
-    return m_value;
+    return std::move(m_value);
   }
-
-  // --- mapping (diagnostics are preserved across the transform) ---
 
   template <typename F>
-  [[nodiscard]] auto transform(F&& func) const
+  [[nodiscard]] auto transform(F&& func) const&
   {
-    using U = std::remove_cvref_t<std::invoke_result_t<F, T>>;
+    using U = std::remove_cvref_t<std::invoke_result_t<F, const T&>>;
+    static_assert(!std::is_void_v<U>, "transform requires a value-returning function");
     if (!m_value.has_value()) {
       return ValueDiagnosticsWrapper<U, DiagnosticsT>{ m_diagnostics };
     }
     return ValueDiagnosticsWrapper<U, DiagnosticsT>{ m_diagnostics, std::invoke(std::forward<F>(func), *m_value) };
+  }
+
+  template <typename F>
+  [[nodiscard]] auto transform(F&& func) &&
+  {
+    using U = std::remove_cvref_t<std::invoke_result_t<F, T&&>>;
+    static_assert(!std::is_void_v<U>, "transform requires a value-returning function");
+    if (!m_value.has_value()) {
+      return ValueDiagnosticsWrapper<U, DiagnosticsT>{ std::move(m_diagnostics) };
+    }
+    return ValueDiagnosticsWrapper<U, DiagnosticsT>{ std::move(m_diagnostics),
+                                                     std::invoke(std::forward<F>(func), *std::move(m_value)) };
   }
 
 private:
