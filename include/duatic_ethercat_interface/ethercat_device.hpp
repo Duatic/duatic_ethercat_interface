@@ -164,7 +164,7 @@ public:
 
   // Helper functions for performing sdo read and writes
   template <typename T>
-  std::optional<T> sdo_read(const SDOIndex index, const SDOSubIndex sub_index = 0)
+  SDOReadValue<T> sdo_read(const SDOIndex index, const SDOSubIndex sub_index = 0)
   {
     if (!bus_) {
       throw std::invalid_argument("Bus had not been initialized yet");
@@ -173,7 +173,7 @@ public:
   }
 
   template <typename T>
-  bool sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index = 0)
+  SDOWriteResult sdo_write(const T value, const SDOIndex index, const SDOSubIndex sub_index = 0)
   {
     if (!bus_) {
       throw std::invalid_argument("Bus had not been initialized yet");

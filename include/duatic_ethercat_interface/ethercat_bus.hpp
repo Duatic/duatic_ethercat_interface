@@ -206,10 +206,11 @@ public:
                          const SDOSubIndex sub_index, const SDOWriteCallback& cb);
 
   template <typename T>
-  std::optional<T> sdo_read(const DeviceId device_id, const SDOIndex index, const SDOSubIndex sub_index = 0);
+  SDOReadValue<T> sdo_read(const DeviceId device_id, const SDOIndex index, const SDOSubIndex sub_index = 0);
 
   template <typename T>
-  bool sdo_write(const DeviceId device_id, const T value, const SDOIndex index, const SDOSubIndex sub_index = 0);
+  SDOWriteResult sdo_write(const DeviceId device_id, const T value, const SDOIndex index,
+                           const SDOSubIndex sub_index = 0);
 
   /**
    * @brief read_rx_pdo - obtain raw pdo data of the rx pdo (rx -> direction the device receives)
@@ -292,10 +293,9 @@ private:
 
 // Explicit specialization
 template <>
-std::optional<std::string> EthercatBus::sdo_read<std::string>(DeviceId device_id, SDOIndex index,
-                                                              SDOSubIndex sub_index);
+SDOReadValue<std::string> EthercatBus::sdo_read<std::string>(DeviceId device_id, SDOIndex index, SDOSubIndex sub_index);
 template <>
-bool EthercatBus::sdo_write<std::string>(DeviceId device_id, const std::string data, SDOIndex index,
-                                         SDOSubIndex sub_index);
+SDOWriteResult EthercatBus::sdo_write<std::string>(DeviceId device_id, const std::string data, SDOIndex index,
+                                                   SDOSubIndex sub_index);
 
 }  // namespace duatic::ethercat_interface

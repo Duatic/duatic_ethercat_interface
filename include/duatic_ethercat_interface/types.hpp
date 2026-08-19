@@ -35,6 +35,8 @@
 #include <optional>
 #include <array>
 
+#include "duatic_ethercat_interface/value_diagnostics_wrapper.hpp"
+
 namespace duatic::ethercat_interface
 {
 // Timing types used within the ethercat sdk
@@ -235,6 +237,9 @@ struct SDOReadResult
     return success;
   }
 };
+
+template <typename T>
+using SDOReadValue = ValueDiagnosticsWrapper<T, SDOReadResult>;
 
 struct SDOWriteResult
 {
