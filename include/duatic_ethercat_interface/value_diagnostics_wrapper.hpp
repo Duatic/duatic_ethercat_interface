@@ -71,10 +71,12 @@ public:
   {
     return *m_value;
   }
+
   T& operator*() & noexcept
   {
     return *m_value;
   }
+
   T&& operator*() && noexcept
   {
     return *std::move(m_value);
@@ -84,6 +86,7 @@ public:
   {
     return m_value.operator->();
   }
+
   T* operator->() noexcept
   {
     return m_value.operator->();
@@ -93,10 +96,12 @@ public:
   {
     return m_value.value();
   }
+
   T& value() &
   {
     return m_value.value();
   }
+
   T&& value() &&
   {
     return std::move(m_value).value();
@@ -107,6 +112,7 @@ public:
   {
     return m_value.value_or(std::forward<U>(fallback));
   }
+
   template <typename U>
   [[nodiscard]] T value_or(U&& fallback) &&
   {
@@ -117,6 +123,7 @@ public:
   {
     return m_diagnostics;
   }
+
   [[nodiscard]] DiagnosticsT diagnostics() && noexcept
   {
     return std::move(m_diagnostics);
@@ -126,6 +133,7 @@ public:
   {
     return m_value;
   }
+
   [[nodiscard]] std::optional<T> as_optional() &&
   {
     return std::move(m_value);

@@ -30,6 +30,7 @@ namespace duatic::ethercat_interface
 EthercatDeviceBase::EthercatDeviceBase(const Hooks& hooks) : hooks_(hooks)
 {
 }
+
 void EthercatDeviceBase::configure(EthercatBus* bus, DeviceInfo device_info)
 {
   device_info_ = device_info;
@@ -75,6 +76,7 @@ void GenericEthercatDevice::update_write(const HighPrecisionTimeStamp& tp)
   bus_->write_rx_pdo(get_device_id(), rx_pdo_);
   rx_pdo_last_write_time_ = tp;
 }
+
 void GenericEthercatDevice::update_read(const HighPrecisionTimeStamp& tp)
 {
   std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);

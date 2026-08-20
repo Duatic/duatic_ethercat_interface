@@ -36,6 +36,7 @@ struct MailboxAccess
   std::optional<SDOIndex> index{};
   std::optional<SDOSubIndex> sub_index{};
 };
+
 static MailboxEvent make_mailbox_event(const ec_errort& e)
 {
   MailboxEvent ev{};
@@ -115,6 +116,7 @@ static MailboxEvent make_mailbox_event(const ec_errort& e)
   }
   return ev;
 }
+
 static MailboxEvent make_timeout_event(const MailboxAccess& acc)
 {
   MailboxEvent ev{};

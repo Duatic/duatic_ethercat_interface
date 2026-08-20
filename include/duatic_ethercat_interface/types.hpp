@@ -60,6 +60,7 @@ struct DeviceInfo
   uint32_t revision;
   bool has_dc;
 };
+
 inline std::string to_string(const DeviceInfo& device)
 {
   std::ostringstream os;
@@ -130,6 +131,7 @@ struct RegisterWriteResult
     return success;
   }
 };
+
 struct RegisterReadResult
 {
   bool success{ false };
@@ -142,6 +144,7 @@ struct RegisterReadResult
     return success;
   }
 };
+
 template <typename T>
 using RegisterReadValue = ValueDiagnosticsWrapper<T, RegisterReadResult>;
 
@@ -291,6 +294,7 @@ inline std::string to_string(const SDOObjectCode code)
   }
   return "Invalid (" + std::to_string(static_cast<int>(code)) + ")";
 }
+
 inline std::ostream& operator<<(std::ostream& os, const SDOObjectCode code)
 {
   return os << to_string(code);
@@ -435,6 +439,7 @@ struct FoEWriteResult
     return success;
   }
 };
+
 struct FoEReadResult
 {
   bool success{ false };

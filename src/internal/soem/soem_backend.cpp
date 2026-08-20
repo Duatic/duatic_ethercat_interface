@@ -64,6 +64,7 @@ struct EthercatBus::BackendImpl
     , dc_sync_(params.dc_cycle_time, params_.master_send_offset)
   {
   }
+
   ~BackendImpl()
   {
     try {
@@ -165,6 +166,7 @@ struct EthercatBus::BackendImpl
       .success = true, .actual_size_read = actual_size, .working_counter = wkc, .mailbox_diagnostics = event
     };
   }
+
   void read_sdo_untyped_async(const SDOReadCallback& cb, std::span<uint8_t> data, const DeviceId device_id,
                               const SDOIndex index, const SDOSubIndex sub_index = 0, bool check_size = true,
                               const int timeout = EC_TIMEOUTRXM)
@@ -215,6 +217,11 @@ struct EthercatBus::BackendImpl
   int get_device_count() const
   {
     return context_.ecatSlavecount_;
+  }
+
+  std::vector<std::shared_ptr<EthercatDeviceBase>> get_devices() const
+  {
+    return devices_;
   }
 
   void attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device)
@@ -391,6 +398,7 @@ struct EthercatBus::BackendImpl
     return std::find_if(devices_.begin(), devices_.end(),
                         [&](const auto& d) { return d->get_device_id() == device_id; }) != devices_.end();
   }
+
   /**
    * @brief check if the specific device has been found on the bus
    * @note this is different to "has_device" which checks if we handle a specific device
@@ -399,6 +407,7 @@ struct EthercatBus::BackendImpl
   {
     return id > 0 && id <= get_device_count();
   }
+
   std::optional<std::chrono::nanoseconds> update_rt()
   {
     if (get_bus_state() != BusState::Activated && get_bus_state() != BusState::Operational) {
@@ -407,6 +416,7 @@ struct EthercatBus::BackendImpl
     // Perform the actual pdo read/write actions, the function return the dc_correction factor for the update rate
     return internal_pdo_update();
   }
+
   bool update_service()
   {
     if (get_bus_state() == BusState::PreInit || get_bus_state() == BusState::Shutdown ||
@@ -506,6 +516,7 @@ struct EthercatBus::BackendImpl
     }
     return result;
   }
+
   DeviceInfo scan(const DeviceId device_id)
   {
     if (get_bus_state() == BusState::PreInit) {
@@ -606,6 +617,7 @@ struct EthercatBus::BackendImpl
 
     return FoEWriteResult{ .success = !failed, .working_counter = wkc, .mailbox_diagnostics = event };
   }
+
   FoEReadValue foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
   {
     std::lock_guard<std::mutex> lock(mailbox_mutex_);
@@ -642,6 +654,7 @@ struct EthercatBus::BackendImpl
                                        .mailbox_diagnostics = event },
                         std::span(buffer.data(), static_cast<std::size_t>(actual_size)));
   }
+
   bool set_device_target_state(const DeviceId device_id, ec_state target_state)
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
@@ -651,11 +664,13 @@ struct EthercatBus::BackendImpl
     context_.ecatSlavelist_[device_id].state = target_state;
     return ecx_writestate(&context_.context, device_id) > 0;
   }
+
   bool wait_for_device_target_state(const DeviceId device_id, ec_state target_state, int timeout = EC_TIMEOUTSTATE)
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     return ecx_statecheck(&context_.context, device_id, target_state, timeout) == target_state;
   }
+
   ec_state get_device_state(const DeviceId device_id)
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
@@ -773,6 +788,7 @@ private:
     logging::info(logger_) << "Bus transitioning into state: " << state;
     state_ = state;
   }
+
   BusState get_bus_state() const
   {
     return state_;
@@ -1026,6 +1042,7 @@ private:
     sink << "Mailbox event (device " << ev.device_id << ", " << ev.description << ", code 0x" << std::hex << ev.code
          << std::dec << ")" << std::endl;
   }
+
   std::pair<std::optional<MailboxEvent>, bool> finish_mailbox_access(const MailboxAccess& acc, const int wkc)
   {
     auto event = drain_mailbox_events(acc);
@@ -1037,6 +1054,7 @@ private:
     const bool failed = wkc <= 0 || (event && event->severity == MailboxEventSeverity::Error);
     return { std::move(event), failed };
   }
+
   std::pair<std::optional<MailboxEvent>, bool> finish_foe_access(const MailboxAccess& acc, const int wkc)
   {
     // FoE itself never pushes, but the ecx_mbxreceive underneath it does - mailbox-layer
@@ -1063,25 +1081,34 @@ EthercatBus::EthercatBus(const Parameters& params)
   // dispatch calls to the actual ethercat device classes
   impl_ = std::make_unique<EthercatBus::BackendImpl>(params, this);
 }
+
 EthercatBus::~EthercatBus()
 {
+  for (auto& device : impl_->get_devices()) {
+    device->clear_bus();
+  }
 }
+
 int EthercatBus::initialize()
 {
   return impl_->initialize();
 }
+
 std::optional<std::chrono::nanoseconds> EthercatBus::update_rt()
 {
   return impl_->update_rt();
 }
+
 bool EthercatBus::update_service()
 {
   return impl_->update_service();
 }
+
 const EthercatBus::Parameters& EthercatBus::get_parameters() const
 {
   return impl_->get_parameters();
 }
+
 void EthercatBus::attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device)
 {
   impl_->attach_device(device_id, device);
@@ -1090,10 +1117,12 @@ void EthercatBus::attach_device(const DeviceId device_id, std::shared_ptr<Etherc
 
   device->configure(this, scan_result);
 }
+
 bool EthercatBus::has_device(const DeviceId device_id) const
 {
   return impl_->has_device(device_id);
 }
+
 bool EthercatBus::has_device_on_bus(const DeviceId device_id) const
 {
   return impl_->has_device_on_bus(device_id);
@@ -1104,16 +1133,19 @@ SDOReadResult EthercatBus::read_sdo_untyped(std::span<uint8_t> data, const Devic
 {
   return impl_->read_sdo_untyped(data, device_id, index, sub_index, check_size);
 }
+
 void EthercatBus::read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
                                    const SDOSubIndex sub_index, const SDOReadCallback& cb, bool check_size)
 {
   impl_->read_sdo_untyped_async(cb, data, device_id, index, sub_index, check_size);
 }
+
 SDOWriteResult EthercatBus::write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id,
                                               const SDOIndex index, const SDOSubIndex sub_index)
 {
   return impl_->write_sdo_untyped(data, device_id, index, sub_index);
 }
+
 void EthercatBus::write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                                     const SDOSubIndex sub_index, const SDOWriteCallback& cb)
 {
@@ -1129,14 +1161,17 @@ std::vector<DeviceInfo> EthercatBus::scan()
 {
   return impl_->scan();
 }
+
 void EthercatBus::startup()
 {
   impl_->startup();
 }
+
 void EthercatBus::activate()
 {
   impl_->activate();
 }
+
 void EthercatBus::shutdown()
 {
   impl_->shutdown();
@@ -1161,10 +1196,12 @@ std::vector<std::string> EthercatBus::list_interfaces()
   ec_free_adapters(adapter);
   return result;
 }
+
 Backend EthercatBus::used_backend()
 {
   return Backend::SOEM;
 }
+
 DeviceInfo EthercatBus::scan(const DeviceId device_id)
 {
   return impl_->scan(device_id);
@@ -1268,6 +1305,7 @@ FoEWriteResult EthercatBus::foe_write(const DeviceId device_id, const std::strin
 {
   return impl_->foe_write(device_id, file_name, data);
 }
+
 FoEReadValue EthercatBus::foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
 {
   return impl_->foe_read(device_id, file_name, buffer);
@@ -1362,6 +1400,7 @@ void EthercatBus::dispatch_device_update_write(EthercatDeviceBase& device, const
 {
   device.update_write(tp);
 }
+
 void EthercatBus::dispatch_device_update_read(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp)
 {
   device.update_read(tp);

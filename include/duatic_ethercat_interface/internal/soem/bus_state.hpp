@@ -84,6 +84,7 @@ static constexpr ec_state map_to_soem_device_state(const EthercatDeviceState sta
       return ec_state::EC_STATE_NONE;
   }
 }
+
 static constexpr EthercatDeviceState map_from_soem_device_state(const ec_state state)
 {
   switch (state) {

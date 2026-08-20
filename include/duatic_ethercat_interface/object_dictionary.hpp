@@ -40,6 +40,7 @@ struct SDOSubEntry
   DataType data_type;
   std::size_t size;
 };
+
 struct SDOEntry
 {
   SDOIndex index;

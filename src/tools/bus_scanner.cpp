@@ -42,6 +42,7 @@ void handle_list_interfaces()
     std::cout << "  " << interface << std::endl;
   }
 }
+
 void handle_scan(const std::string& interface)
 {
   EthercatBus bus(EthercatBus::Parameters{ .interface = interface });
@@ -56,6 +57,7 @@ void handle_scan(const std::string& interface)
     std::cout << info << std::endl;
   }
 }
+
 void handle_sdo(const std::string& interface)
 {
   EthercatBus bus(EthercatBus::Parameters{ .interface = interface });

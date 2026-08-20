@@ -45,6 +45,7 @@ SpaceBeforeAssignmentOperators: true
 ContinuationIndentWidth: 4
 SortIncludes: false
 SpaceAfterCStyleCast: false
+SeparateDefinitionBlocks: Always
 
 # Configure each individual brace in BraceWrapping
 BreakBeforeBraces: Custom

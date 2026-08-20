@@ -47,6 +47,7 @@ enum class DiagnosticsLevel
 struct DiagnosticsOptions
 {
   DiagnosticsOptions() = default;
+
   explicit DiagnosticsOptions(DiagnosticsLevel level)
   {
     pdo_diagnostics = level;
@@ -54,6 +55,7 @@ struct DiagnosticsOptions
     esc_diagnostics = level;
     esc_port_diagnostics = level;
   }
+
   // PDO related basic diagnostics such as WKC mismatcheds, lost frames, and total frames sent
   DiagnosticsLevel pdo_diagnostics{ DiagnosticsLevel::Basic };
   // All mailbox related functions (e.g. SDO...)
@@ -64,6 +66,7 @@ struct DiagnosticsOptions
   // Diagnostics related to every port of an esc (very expensive diagnostics)
   DiagnosticsLevel esc_port_diagnostics{ DiagnosticsLevel::Off };
 };
+
 /**
  * @brief is_diagnostics_enabled - check if the diagnostics level is higher than 'Off'
  */

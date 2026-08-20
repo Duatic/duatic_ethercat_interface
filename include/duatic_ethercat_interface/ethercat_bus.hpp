@@ -40,6 +40,7 @@ namespace duatic::ethercat_interface
 {
 // Forward declaration of the device base class
 class EthercatDeviceBase;
+
 /**
  * @brief EthercatBus - Implementation of an EthercatMaster around any existing SDK
  * @note all non-rt critical function can throw

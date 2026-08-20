@@ -47,10 +47,12 @@ public:
       full_msg_ += " (ec: " + std::to_string(ec.value()) + ")";
     }
   }
+
   const char* what() const noexcept override
   {
     return full_msg_.c_str();
   }
+
   /**
    * @brief get_backend - obtain the backend identifier of the used backend
    */
@@ -58,6 +60,7 @@ public:
   {
     return backend_;
   }
+
   /**
    * @brief get_error_code - obtain the (backend specific) error code of the specific implementation
    */

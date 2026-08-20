@@ -46,6 +46,7 @@ inline constexpr bool timespec_smaller_than(const timespec& ts1, const timespec&
 {
   return (ts1.tv_sec < ts2.tv_sec || (ts1.tv_sec == ts2.tv_sec && ts1.tv_nsec < ts2.tv_nsec));
 }
+
 /**
  * @brief Calculates the difference between two timespec structures in nanoseconds.
  * @param a The timespec to subtract from.
@@ -56,6 +57,7 @@ inline constexpr int64_t timespec_diff_ns(const timespec& a, const timespec& b)
 {
   return (a.tv_sec - b.tv_sec) * billion + (a.tv_nsec - b.tv_nsec);
 }
+
 /**
  * @brief Adds a specified number of nanoseconds to a timespec structure.
  * @param t The base timespec.
@@ -143,6 +145,7 @@ public:
     accumulated_delay_ns_ = 0;
     overrun_count_ = 0;
   }
+
   /**
    * @brief Advances to the next time step and sleeps until the deadline.
    *

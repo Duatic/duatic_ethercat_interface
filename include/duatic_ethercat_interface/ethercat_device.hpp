@@ -69,6 +69,7 @@ public:
       hooks_.on_configure();
     }
   }
+
   /**
    * @brief on_pre_startup - before the bus pdo mapping / dc will be configured
    */
@@ -78,6 +79,7 @@ public:
       hooks_.on_startup();
     }
   }
+
   /**
    * @brief on_pre_activate - before all devices are put into operational state but after bus pdo mapping has been
    * configured
@@ -88,6 +90,7 @@ public:
       hooks_.on_pre_activate();
     }
   }
+
   /**
    * @brief on_pre_activate - after all devices have been put into operational
    */
@@ -97,6 +100,7 @@ public:
       hooks_.on_post_activate();
     }
   }
+
   /**
    * @brief on_pre_shutdown - before bus will be shutdown
    */
@@ -106,6 +110,7 @@ public:
       hooks_.on_pre_shutdown();
     }
   }
+
   /**
    * @brief on_post_shutdown - after bus will be shutdown
    */
@@ -115,6 +120,7 @@ public:
       hooks_.on_post_shutdown();
     }
   }
+
   /**
    * @brief get_device_id - get the id of this specific device on the bus
    */
@@ -122,6 +128,7 @@ public:
   {
     return device_info_.id;
   }
+
   /**
    * @brief get_device_name - get the name of this specific device on the bus
    * @note this is the name obtained from the device
@@ -130,6 +137,7 @@ public:
   {
     return device_info_.name;
   }
+
   /**
    * @brief get_device_info - collection of all information that the backend usually can provide about a device
    */
@@ -216,6 +224,15 @@ private:
    * @note this may only be called by the bus
    */
   void configure(EthercatBus* bus, DeviceInfo device_info);
+
+  /**
+   * @brief clear_bus - clear the bus object reference
+   * @note this may only be called by the bus
+   */
+  void clear_bus()
+  {
+    bus_ = nullptr;
+  }
 };
 
 /**
@@ -231,6 +248,7 @@ public:
   explicit GenericEthercatDevice(const Hooks& hooks = {}) : EthercatDeviceBase(hooks)
   {
   }
+
   void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) override
   {
     // For the generic device we need to allocate the necessary buffers
@@ -260,6 +278,7 @@ public:
     std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
     std::memcpy(out.data(), rx_pdo_.data(), out.size());
   }
+
   /**
    * @brief Configure the next RX PDO to be sent to the device (rx == data the master sends and the device receives)
    * @note this function is fully thread safe and does not block the bus. The data is copied to the bus on the next
@@ -277,6 +296,7 @@ public:
     std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
     std::memcpy(rx_pdo_.data(), rx.data(), rx.size());
   }
+
   /**
    * @brief Access the latest received TX PDO (tx == data the device sends the the maste receives)
    * @note this function is fully thread safe and does not block the bus. The data is copied from the bus at the
@@ -310,6 +330,7 @@ public:
     get_generic_rx_pdo({ reinterpret_cast<uint8_t*>(&temp), sizeof(RXPDO) });
     return temp;
   }
+
   /**
    * @brief Configure the next RX PDO to be sent to the device (rx == data the master sends and the device receives)
    * @note this function is fully thread safe and does not block the bus. The data is copied to the bus on the next
@@ -325,6 +346,7 @@ public:
     }
     set_generic_rx_pdo({ reinterpret_cast<const uint8_t*>(&rx), sizeof(RXPDO) });
   }
+
   /**
    * @brief Access the latest received TX PDO (tx == data the device sends the the maste receives)
    * @note this function is fully thread safe and does not block the bus. The data is copied from the bus at the
@@ -342,6 +364,7 @@ public:
     get_generic_tx_pdo({ reinterpret_cast<uint8_t*>(&temp), sizeof(TXPDO) });
     return temp;
   }
+
   /**
    * @brief Latest RX PDO write time stamp
    * Obtain the latest point in time when the internal rx pdo copy was written on the bus
@@ -351,6 +374,7 @@ public:
   {
     return rx_pdo_last_write_time_;
   }
+
   /**
    * @brief Latest TX PDO read time stamp
    * Obtain the latest point in the time when the internal tx pdo copy was updated from the bus

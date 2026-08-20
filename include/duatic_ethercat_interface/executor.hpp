@@ -59,10 +59,12 @@ public:
     , logger_(logging::get_logger_with_default_sink("SingleBusExecutor"))
   {
   }
+
   ~SingleBusExecutor()
   {
     stop();
   }
+
   /**
    * @brief spin - Start to spin (call update) on all given bus instances
    * @note this will shutdown the bus instances at exit
@@ -152,6 +154,7 @@ public:
       logging::info(logger_) << "Service thread is ending now" << std::endl;
     });
   }
+
   /**
    * @brief stop - Stop spinning the given bus instances
    */
@@ -185,6 +188,7 @@ public:
                                          .service_thread_stats = service_thread_diagnostics_ };
     return snapshot;
   }
+
   /**
    * @brief has_rt_error - check if a critical error in the realtime loop has occured
    */
@@ -192,6 +196,7 @@ public:
   {
     return rt_error_ocurred_.load(std::memory_order_acquire);
   }
+
   /**
    * @brief get_rt_error - get the error that has occured in the rt thrread
    */
@@ -199,6 +204,7 @@ public:
   {
     return rt_error_ptr_;
   }
+
   /**
    * @brief has_service_error - check if a critical error in the service loop has occured
    */
@@ -206,6 +212,7 @@ public:
   {
     return service_error_ocurred_;
   }
+
   /**
    * @brief get_service_error - get the error that has occured in the service thread
    */

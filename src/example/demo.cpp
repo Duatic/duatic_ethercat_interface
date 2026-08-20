@@ -34,6 +34,7 @@ struct RX
 {
   int a;
 };
+
 struct TX
 {
   int b;
@@ -48,6 +49,7 @@ public:
   Drive() : device_(std::make_shared<Device>())
   {
   }
+
   auto& get_device()
   {
     return device_;
@@ -56,11 +58,13 @@ public:
   void do_something()
   {
   }
+
   int get_reading()
   {
     device_->get_rx_pdo<RX>();
     return 0;
   }
+
   void set_command(int cmd)
   {
   }
