@@ -36,7 +36,7 @@
 #include "duatic_ethercat_interface/distributed_clock_sync.hpp"
 
 #include "duatic_ethercat_interface/object_dictionary.hpp"
-#include "duatic_ethercat_interface/priorty_inheriting_mutex.hpp"
+#include "duatic_ethercat_interface/priority_inheriting_mutex.hpp"
 
 #include "duatic_ethercat_interface/internal/backend_impl.hpp"
 #include "duatic_ethercat_interface/internal/soem/soem_context.hpp"

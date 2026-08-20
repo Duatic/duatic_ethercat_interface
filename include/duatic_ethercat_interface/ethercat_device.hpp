@@ -34,7 +34,7 @@
 #include "duatic_ethercat_interface/exceptions.hpp"
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 #include "duatic_ethercat_interface/ethercat_bus.hpp"
-#include "duatic_ethercat_interface/priorty_inheriting_mutex.hpp"
+#include "duatic_ethercat_interface/priority_inheriting_mutex.hpp"
 
 namespace duatic::ethercat_interface
 {
