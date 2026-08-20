@@ -1076,7 +1076,7 @@ private:
 };
 
 // Pimpl - redirections
-EthercatBus::EthercatBus(const Parameters& params)
+EthercatBus::EthercatBus(const Parameters& params) : logger_(logging::get_logger_with_default_sink("EthercatBus"))
 {
   // NOTE we pass a pointer to ourself on purpose to the backend as this is the best way to
   // dispatch calls to the actual ethercat device classes
@@ -1318,17 +1318,18 @@ bool EthercatBus::change_device_state(const DeviceId device_id, const EthercatDe
   const auto soem_state = map_to_soem_device_state(target_state);
   // Request the state change
   bool res = impl_->set_device_target_state(device_id, soem_state);
-  if(!res){
-    logging::warning() << "Failed to set desired target state (" << target_state <<")" << "for device: " << device_id << std::endl;
+  if (!res) {
+    logging::warning(logger_) << "Failed to set desired target state (" << target_state << ")"
+                              << "for device: " << device_id << std::endl;
   }
   // Handle the case that the user does not want to block or that the set command failed
   if (!blocking || !res) {
     return res;
   }
 
-  const bool success =  impl_->wait_for_device_target_state(device_id, soem_state);
-  if(!success){
-    logging::warning() << "Device went not into desired target state within timeout" << std::endl;
+  const bool success = impl_->wait_for_device_target_state(device_id, soem_state);
+  if (!success) {
+    logging::warning(logger_) << "Device went not into desired target state within timeout" << std::endl;
   }
   return success;
 }

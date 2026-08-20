@@ -27,9 +27,10 @@
 #include <memory>
 #include <vector>
 #include <cstdint>
-
 #include <chrono>
 #include <string>
+
+#include <duatic_message_logger/log.hpp>
 
 #include "duatic_ethercat_interface/object_dictionary.hpp"
 #include "duatic_ethercat_interface/types.hpp"
@@ -331,6 +332,7 @@ private:
   // Pimpl pattern which hides the actual backend implementation
   class BackendImpl;
   std::unique_ptr<BackendImpl> impl_;
+  logging::Logger logger_;
 
   // Dispatch functions we keep here in order to have a better access modell in the EthercatDevice classes
   void dispatch_device_update_write(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp);
