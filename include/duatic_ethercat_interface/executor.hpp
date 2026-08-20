@@ -52,7 +52,7 @@ struct ExecutorParameters
 class SingleBusExecutor
 {
 public:
-  explicit SingleBusExecutor(std::shared_ptr<EthercatBus>& bus, const ExecutorParameters& params = ExecutorParameters{})
+  explicit SingleBusExecutor(std::shared_ptr<EthercatBus> bus, const ExecutorParameters& params = ExecutorParameters{})
     : bus_(bus)
     , params_(params)
     , update_rate_(bus->get_parameters().dc_cycle_time)

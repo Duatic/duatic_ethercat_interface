@@ -83,7 +83,7 @@ class EthercatDeviceBase;
  * list_interfaces() (static)                        | not thread safe
  * used_backend() (static)                           | thread safe
  */
-class EthercatBus
+class EthercatBus final
 {
 public:
   struct Parameters
@@ -109,7 +109,7 @@ public:
   };
 
   explicit EthercatBus(const Parameters& params);
-  virtual ~EthercatBus();
+  ~EthercatBus();
 
   /**
    * @brief initialize the bus

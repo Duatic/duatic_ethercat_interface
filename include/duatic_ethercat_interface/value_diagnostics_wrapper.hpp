@@ -48,95 +48,95 @@ public:
 
   ValueDiagnosticsWrapper() = default;
 
-  explicit ValueDiagnosticsWrapper(DiagnosticsT diagnostics) : m_diagnostics{ std::move(diagnostics) }
+  explicit ValueDiagnosticsWrapper(DiagnosticsT diagnostics) : diagnostics_{ std::move(diagnostics) }
   {
   }
 
   ValueDiagnosticsWrapper(DiagnosticsT diagnostics, T value)
-    : m_diagnostics{ std::move(diagnostics) }, m_value{ std::move(value) }
+    : diagnostics_{ std::move(diagnostics) }, value_{ std::move(value) }
   {
   }
 
   [[nodiscard]] bool has_value() const noexcept
   {
-    return m_value.has_value();
+    return value_.has_value();
   }
 
   [[nodiscard]] explicit operator bool() const noexcept requires(!std::is_same_v<std::remove_cv_t<T>, bool>)
   {
-    return m_value.has_value();
+    return value_.has_value();
   }
 
   const T& operator*() const& noexcept
   {
-    return *m_value;
+    return *value_;
   }
 
   T& operator*() & noexcept
   {
-    return *m_value;
+    return *value_;
   }
 
   T&& operator*() && noexcept
   {
-    return *std::move(m_value);
+    return *std::move(value_);
   }
 
   const T* operator->() const noexcept
   {
-    return m_value.operator->();
+    return value_.operator->();
   }
 
   T* operator->() noexcept
   {
-    return m_value.operator->();
+    return value_.operator->();
   }
 
   const T& value() const&
   {
-    return m_value.value();
+    return value_.value();
   }
 
   T& value() &
   {
-    return m_value.value();
+    return value_.value();
   }
 
   T&& value() &&
   {
-    return std::move(m_value).value();
+    return std::move(value_).value();
   }
 
   template <typename U>
   [[nodiscard]] T value_or(U&& fallback) const&
   {
-    return m_value.value_or(std::forward<U>(fallback));
+    return value_.value_or(std::forward<U>(fallback));
   }
 
   template <typename U>
   [[nodiscard]] T value_or(U&& fallback) &&
   {
-    return std::move(m_value).value_or(std::forward<U>(fallback));
+    return std::move(value_).value_or(std::forward<U>(fallback));
   }
 
   [[nodiscard]] const DiagnosticsT& diagnostics() const& noexcept
   {
-    return m_diagnostics;
+    return diagnostics_;
   }
 
   [[nodiscard]] DiagnosticsT diagnostics() && noexcept
   {
-    return std::move(m_diagnostics);
+    return std::move(diagnostics_);
   }
 
   [[nodiscard]] const std::optional<T>& as_optional() const& noexcept
   {
-    return m_value;
+    return value_;
   }
 
   [[nodiscard]] std::optional<T> as_optional() &&
   {
-    return std::move(m_value);
+    return std::move(value_);
   }
 
   template <typename F>
@@ -144,10 +144,10 @@ public:
   {
     using U = std::remove_cvref_t<std::invoke_result_t<F, const T&>>;
     static_assert(!std::is_void_v<U>, "transform requires a value-returning function");
-    if (!m_value.has_value()) {
-      return ValueDiagnosticsWrapper<U, DiagnosticsT>{ m_diagnostics };
+    if (!value_.has_value()) {
+      return ValueDiagnosticsWrapper<U, DiagnosticsT>{ diagnostics_ };
     }
-    return ValueDiagnosticsWrapper<U, DiagnosticsT>{ m_diagnostics, std::invoke(std::forward<F>(func), *m_value) };
+    return ValueDiagnosticsWrapper<U, DiagnosticsT>{ diagnostics_, std::invoke(std::forward<F>(func), *value_) };
   }
 
   template <typename F>
@@ -155,16 +155,16 @@ public:
   {
     using U = std::remove_cvref_t<std::invoke_result_t<F, T&&>>;
     static_assert(!std::is_void_v<U>, "transform requires a value-returning function");
-    if (!m_value.has_value()) {
-      return ValueDiagnosticsWrapper<U, DiagnosticsT>{ std::move(m_diagnostics) };
+    if (!value_.has_value()) {
+      return ValueDiagnosticsWrapper<U, DiagnosticsT>{ std::move(diagnostics_) };
     }
-    return ValueDiagnosticsWrapper<U, DiagnosticsT>{ std::move(m_diagnostics),
-                                                     std::invoke(std::forward<F>(func), *std::move(m_value)) };
+    return ValueDiagnosticsWrapper<U, DiagnosticsT>{ std::move(diagnostics_),
+                                                     std::invoke(std::forward<F>(func), *std::move(value_)) };
   }
 
 private:
-  DiagnosticsT m_diagnostics{};
-  std::optional<T> m_value{};
+  DiagnosticsT diagnostics_{};
+  std::optional<T> value_{};
 };
 
 }  // namespace duatic::ethercat_interface
