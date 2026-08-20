@@ -57,8 +57,9 @@ std::string to_string(const AlStatus& status)
 
 struct EthercatBus::BackendImpl
 {
-  explicit BackendImpl(const Parameters& params)
+  explicit BackendImpl(const Parameters& params, EthercatBus* owner)
     : params_(params)
+    , owner_(owner)
     , logger_(logging::get_logger_with_default_sink("SOEM-Backend"))
     , dc_sync_(params.dc_cycle_time, params_.master_send_offset)
   {
@@ -605,7 +606,7 @@ struct EthercatBus::BackendImpl
 
     return FoEWriteResult{ .success = !failed, .working_counter = wkc, .mailbox_diagnostics = event };
   }
-  FoEReadResult foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
+  FoEReadValue foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
   {
     std::lock_guard<std::mutex> lock(mailbox_mutex_);
     // Only perform operations on an initialized bus
@@ -630,18 +631,16 @@ struct EthercatBus::BackendImpl
     if (failed) {
       logging::error(logger_) << "Device id " << device_id << ": FoE read of \"" << file_name << "\" failed, wkc "
                               << wkc << ": " << (event ? event->description : "unknown reason") << std::endl;
-      return FoEReadResult{ .success = false,
-                            .working_counter = wkc,
-                            .actual_read_size = 0,
-                            .data = std::span(buffer.data(), 0),
-                            .mailbox_diagnostics = event };
+      return FoEReadValue(FoEReadResult{
+          .success = false, .working_counter = wkc, .actual_read_size = 0, .mailbox_diagnostics = event });
     }
 
-    return FoEReadResult{ .success = true,
-                          .working_counter = wkc,
-                          .actual_read_size = static_cast<std::size_t>(actual_size),
-                          .data = std::span(buffer.data(), static_cast<std::size_t>(actual_size)),
-                          .mailbox_diagnostics = event };
+    return FoEReadValue(FoEReadResult{ .success = true,
+                                       .working_counter = wkc,
+                                       .actual_read_size = static_cast<std::size_t>(actual_size),
+
+                                       .mailbox_diagnostics = event },
+                        std::span(buffer.data(), static_cast<std::size_t>(actual_size)));
   }
   bool set_device_target_state(const DeviceId device_id, ec_state target_state)
   {
@@ -736,6 +735,8 @@ struct EthercatBus::BackendImpl
 private:
   // Parameterization
   const Parameters params_;
+  // Reference for dispatching several methods
+  EthercatBus* owner_{ nullptr };
 
   // Ethercat context and bus state tracking
   EthercatContext context_;
@@ -790,7 +791,7 @@ private:
     const auto now = HighPrecisionClock::now();
     // Take the latest tx pdo state from every device
     for (auto& device : devices_) {
-      device->update_write(now);
+      owner_->dispatch_device_update_write(*device, now);
     }
 
     // Stored outside the lock block so that the diagnostics can access it
@@ -818,7 +819,7 @@ private:
 
     // Update the pdo state of every device
     for (auto& device : devices_) {
-      device->update_read(now);
+      owner_->dispatch_device_update_read(*device, now);
     }
 
     // On older systems already this diagnostics has a measurable impact
@@ -1058,7 +1059,9 @@ private:
 // Pimpl - redirections
 EthercatBus::EthercatBus(const Parameters& params)
 {
-  impl_ = std::make_unique<EthercatBus::BackendImpl>(params);
+  // NOTE we pass a pointer to ourself on purpose to the backend as this is the best way to
+  // dispatch calls to the actual ethercat device classes
+  impl_ = std::make_unique<EthercatBus::BackendImpl>(params, this);
 }
 EthercatBus::~EthercatBus()
 {
@@ -1084,6 +1087,7 @@ void EthercatBus::attach_device(const DeviceId device_id, std::shared_ptr<Etherc
   impl_->attach_device(device_id, device);
   // Important: As the impl_ does not know the bus we need to perform the configure step here
   const auto scan_result = scan(device_id);
+
   device->configure(this, scan_result);
 }
 bool EthercatBus::has_device(const DeviceId device_id) const
@@ -1181,7 +1185,7 @@ void EthercatBus::read_tx_pdo(const DeviceId device_id, std::span<uint8_t> data)
   impl_->read_tx_pdo(device_id, data);
 }
 
-template <typename T>
+template <SdoValueType T>
 SDOReadValue<T> EthercatBus::sdo_read(const DeviceId device_id, const SDOIndex index, const SDOSubIndex sub_index)
 {
   static_assert(!std::is_same_v<T, std::string>);
@@ -1229,7 +1233,7 @@ template SDOReadValue<int64_t> EthercatBus::sdo_read<int64_t>(DeviceId, SDOIndex
 template SDOReadValue<float> EthercatBus::sdo_read<float>(DeviceId, SDOIndex, SDOSubIndex);
 template SDOReadValue<double> EthercatBus::sdo_read<double>(DeviceId, SDOIndex, SDOSubIndex);
 
-template <typename T>
+template <SdoValueType T>
 SDOWriteResult EthercatBus::sdo_write(const DeviceId device_id, const T value, const SDOIndex index,
                                       const SDOSubIndex sub_index)
 {
@@ -1264,7 +1268,7 @@ FoEWriteResult EthercatBus::foe_write(const DeviceId device_id, const std::strin
 {
   return impl_->foe_write(device_id, file_name, data);
 }
-FoEReadResult EthercatBus::foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
+FoEReadValue EthercatBus::foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer)
 {
   return impl_->foe_read(device_id, file_name, buffer);
 }
@@ -1296,33 +1300,35 @@ RegisterWriteResult EthercatBus::write_register_untyped(std::span<const uint8_t>
   return impl_->write_register_untyped(data, device_id, address);
 }
 
-template <typename T>
-std::optional<T> EthercatBus::register_read(const DeviceId device_id, const RegisterAddress address, bool check_size)
+template <EthercatValueType T>
+RegisterReadValue<T> EthercatBus::register_read(const DeviceId device_id, const RegisterAddress address,
+                                                bool check_size)
 {
   // This is the actual data instance we use
   T data{};
   // And this is just a safe representation (pointer + size) to it
   std::span<uint8_t> buffer(reinterpret_cast<uint8_t*>(&data), sizeof(T));
 
-  if (!read_register_untyped(buffer, device_id, address, check_size)) {
-    return std::nullopt;
+  const auto result = read_register_untyped(buffer, device_id, address, check_size);
+  if (!result) {
+    return RegisterReadValue<T>(result);
   }
-  return data;
+  return RegisterReadValue<T>(result, data);
 }
 
-template std::optional<bool> EthercatBus::register_read<bool>(DeviceId, RegisterAddress, bool);
-template std::optional<uint8_t> EthercatBus::register_read<uint8_t>(DeviceId, RegisterAddress, bool);
-template std::optional<int8_t> EthercatBus::register_read<int8_t>(DeviceId, RegisterAddress, bool);
-template std::optional<uint16_t> EthercatBus::register_read<uint16_t>(DeviceId, RegisterAddress, bool);
-template std::optional<int16_t> EthercatBus::register_read<int16_t>(DeviceId, RegisterAddress, bool);
-template std::optional<uint32_t> EthercatBus::register_read<uint32_t>(DeviceId, RegisterAddress, bool);
-template std::optional<int32_t> EthercatBus::register_read<int32_t>(DeviceId, RegisterAddress, bool);
-template std::optional<uint64_t> EthercatBus::register_read<uint64_t>(DeviceId, RegisterAddress, bool);
-template std::optional<int64_t> EthercatBus::register_read<int64_t>(DeviceId, RegisterAddress, bool);
-template std::optional<float> EthercatBus::register_read<float>(DeviceId, RegisterAddress, bool);
-template std::optional<double> EthercatBus::register_read<double>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<bool> EthercatBus::register_read<bool>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<uint8_t> EthercatBus::register_read<uint8_t>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<int8_t> EthercatBus::register_read<int8_t>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<uint16_t> EthercatBus::register_read<uint16_t>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<int16_t> EthercatBus::register_read<int16_t>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<uint32_t> EthercatBus::register_read<uint32_t>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<int32_t> EthercatBus::register_read<int32_t>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<uint64_t> EthercatBus::register_read<uint64_t>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<int64_t> EthercatBus::register_read<int64_t>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<float> EthercatBus::register_read<float>(DeviceId, RegisterAddress, bool);
+template RegisterReadValue<double> EthercatBus::register_read<double>(DeviceId, RegisterAddress, bool);
 
-template <typename T>
+template <EthercatValueType T>
 bool EthercatBus::register_write(const DeviceId device_id, const RegisterAddress address, const T data)
 {
   // Call by value makes this function safer in case the call needs to be queued
@@ -1350,4 +1356,15 @@ DiagnosticsSnapshot EthercatBus::diagnostics(bool force_update)
 {
   return impl_->diagnostics(force_update);
 }
+
+// Dispatch functions into a specific ethercat device
+void EthercatBus::dispatch_device_update_write(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp)
+{
+  device.update_write(tp);
+}
+void EthercatBus::dispatch_device_update_read(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp)
+{
+  device.update_read(tp);
+}
+
 }  // namespace duatic::ethercat_interface

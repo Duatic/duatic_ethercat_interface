@@ -45,6 +45,42 @@ class EthercatDeviceBase;
  * @note all non-rt critical function can throw
  * @note All functions that are marked as "not thread safe" may not be called from multiple different threads at the
  * same time
+ *  @par Thread-safety summary
+ * Function                                          | Thread safety
+ * --------------------------------------------------| -------------------------------------------
+ * initialize()                                      | not thread safe
+ * scan()                                            | not thread safe
+ * scan(device_id)                                   | thread safe
+ * read_od(device_id, full_read)                     | not thread safe
+ * startup()                                         | not thread safe
+ * activate()                                        | not thread safe
+ * shutdown()                                        | not thread safe
+ * update_rt()                                       | thread safe
+ * update_service()                                  | thread safe
+ * attach_device(device_id, device)                  | not thread safe
+ * get_parameters()                                  | thread safe
+ * has_device(device_id)                             | thread safe
+ * has_device_on_bus(device_id)                      | thread safe
+ * read_sdo_untyped(...) (blocking)                  | thread safe
+ * write_sdo_untyped(...) (blocking)                 | thread safe
+ * read_sdo_untyped(..., cb) (non-blocking)          | thread safe
+ * write_sdo_untyped(..., cb) (non-blocking)         | thread safe
+ * sdo_read<T>(...)                                  | thread safe
+ * sdo_write<T>(...)                                 | thread safe
+ * read_rx_pdo(device_id)                            | thread safe
+ * write_rx_pdo(device_id, data)                     | thread safe
+ * read_tx_pdo(device_id, data)                      | thread safe
+ * change_device_state(...)                          | not thread safe
+ * foe_write(...)                                    | thread safe
+ * foe_read(...)                                     | thread safe
+ * read_register_untyped(...)                        | thread safe
+ * write_register_untyped(...)                       | thread safe
+ * register_read<T>(...)                             | thread safe
+ * register_write<T>(...)                            | thread safe
+ * diagnostics(force_update = false)                 | thread safe
+ * diagnostics(force_update = true)                  | not thread safe
+ * list_interfaces() (static)                        | not thread safe
+ * used_backend() (static)                           | thread safe
  */
 class EthercatBus
 {
@@ -78,6 +114,7 @@ public:
    * @brief initialize the bus
    * @throws BackendError
    * @return Amount of slaves found on the bus
+   * @note not thread safe
    */
   int initialize();
 
@@ -105,6 +142,7 @@ public:
    * @brief startup - next step after initialize
    * This configures the PDO mapping of all devices on the bus
    * @note afterwards no additional device can be added
+   * @note not thread safe
    */
   void startup();
   /**
@@ -135,11 +173,13 @@ public:
   /**
    * @brief attach_device - let this bus instance handle the specific ethercat device.
    * Internally it will configure the device with the specific id
+   * @note not thread safe
    */
   void attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device);
   /**
    * @brief get_parameters - obtain the configuration objects
-   * @return const reference to used Paramters
+   * @return const reference to used Parameters
+   * @note thread safe
    */
   const Parameters& get_parameters() const;
 
@@ -148,6 +188,7 @@ public:
    * @param device_id - the id (bus address) of the device you are looking for
    * @return true in case the bus manages that specific device
    * @note this checks if the device is _managed_ by this bus instance object (has been added via attach device)
+   * @note thread safe
    */
   bool has_device(const DeviceId device_id) const;
 
@@ -156,6 +197,7 @@ public:
    * @param device_id - the id (bus address) of the device you are looking for
    * @return true in case the specific device was found on the bus
    * @note this checks if the device is on the physical bus. Not if it is managed by this bus instance object
+   * @note thread safe
    */
   bool has_device_on_bus(const DeviceId device_id) const;
 
@@ -186,9 +228,8 @@ public:
    * @throws DeviceNotFound if the device is not on the bus
    * @throws BackendError if the bus is not initialized yet
    * @note thread safe
-   * @note In case the bus is running the callback will be called from a different thread than the one you used for
+   * @note This callback may be called from a different thread than the one you used for
    * calling this function
-   * TODO improve callback threading model
    */
   void read_sdo_untyped(std::span<uint8_t> data, const DeviceId device_id, const SDOIndex index,
                         const SDOSubIndex sub_index, const SDOReadCallback& cb, bool check_size = true);
@@ -198,17 +239,16 @@ public:
    * @throws DeviceNotFound if the device is not on the bus
    * @throws BackendError if the bus is not initialized yet
    * @note thread safe
-   * @note In case the bus is running the callback will be called from a different thread than the one you used for
+   * @note This callback may be called from a different thread than the one you used for
    * calling this function
-   * TODO improve callback threading model
    */
   void write_sdo_untyped(std::span<const uint8_t> data, const DeviceId device_id, const SDOIndex index,
                          const SDOSubIndex sub_index, const SDOWriteCallback& cb);
 
-  template <typename T>
+  template <SdoValueType T>
   SDOReadValue<T> sdo_read(const DeviceId device_id, const SDOIndex index, const SDOSubIndex sub_index = 0);
 
-  template <typename T>
+  template <SdoValueType T>
   SDOWriteResult sdo_write(const DeviceId device_id, const T value, const SDOIndex index,
                            const SDOSubIndex sub_index = 0);
 
@@ -238,31 +278,31 @@ public:
   bool change_device_state(const DeviceId device_id, const EthercatDeviceState target_state, bool blocking = true);
   /**
    * @brief foe_write - perform a file write via ethercat
-   * @note not thread safe
+   * @note thread safe
    */
   FoEWriteResult foe_write(const DeviceId device_id, const std::string& file_name, std::span<const uint8_t> data);
   /**
    * @brief foe_read - perform a file read via ethercat
-   * @note not thread safe
+   * @note thread safe
    */
-  FoEReadResult foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer);
+  FoEReadValue foe_read(const DeviceId device_id, const std::string& file_name, std::span<uint8_t> buffer);
 
   /**
    * @brief read_register_untyped - perform a blocking read to the specified ESC register
-   * @note thread_safe
+   * @note thread safe
    */
   RegisterReadResult read_register_untyped(std::span<uint8_t> data, const DeviceId device_id,
                                            const RegisterAddress address, bool check_size = true);
   /**
    * @brief write_register_untyped - perform a blocking read to the specified ESC register
-   * @note thread_safe
+   * @note thread safe
    */
   RegisterWriteResult write_register_untyped(std::span<const uint8_t> data, const DeviceId device_id,
                                              const RegisterAddress address);
 
-  template <typename T>
-  std::optional<T> register_read(const DeviceId device_id, const RegisterAddress address, bool check_size = true);
-  template <typename T>
+  template <EthercatValueType T>
+  RegisterReadValue<T> register_read(const DeviceId device_id, const RegisterAddress address, bool check_size = true);
+  template <EthercatValueType T>
   bool register_write(const DeviceId device_id, const RegisterAddress address, const T data);
 
   /**
@@ -276,12 +316,13 @@ public:
   /**
    * @brief list_interface - provide a list with all supported interface names
    * @return list of strings of the interface names
-   * @note not thread safe
+   * @note thread safe
    */
   static std::vector<std::string> list_interfaces();
   /**
    * @brief used_backend - obtain the configured and used backend implementation identifier
    * @note this is mostly for debugging and identification purpouses
+   * @note thread safe
    */
   static Backend used_backend();
 
@@ -289,6 +330,10 @@ private:
   // Pimpl pattern which hides the actual backend implementation
   class BackendImpl;
   std::unique_ptr<BackendImpl> impl_;
+
+  // Dispatch functions we keep here in order to have a better access modell in the EthercatDevice classes
+  void dispatch_device_update_write(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp);
+  void dispatch_device_update_read(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp);
 };
 
 // Explicit specialization

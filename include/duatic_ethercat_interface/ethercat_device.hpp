@@ -55,12 +55,10 @@ public:
     FunctionPtr on_post_shutdown;
   };
 
+  friend class EthercatBus;
+
   explicit EthercatDeviceBase(const Hooks& hooks = {});
   virtual ~EthercatDeviceBase() = default;
-  /**
-   * @brief configure - called by the bus to configure this device instace
-   */
-  void configure(EthercatBus* bus, DeviceInfo device_info);
 
   /**
    * @brief on_configure - called when the device has been configured on a specific bus
@@ -151,16 +149,6 @@ public:
       hooks_.on_pdo_configured();
     }
   }
-  /**
-   * @brief update_write - callback which gets called __before__ pdo data is sent over the line
-   * @note do not manually call this function
-   */
-  virtual void update_write(const HighPrecisionTimeStamp& tp) = 0;
-  /**
-   * @brief update_read - callback which gets called __after__ pdo data has been read from the line
-   * @note do not manually call this function
-   */
-  virtual void update_read(const HighPrecisionTimeStamp& tp) = 0;
 
   // Helper functions for performing sdo read and writes
   template <typename T>
@@ -203,15 +191,31 @@ public:
    * @brief foe_read - perform a file read via ethercat
    * @note not thread safe
    */
-  FoEReadResult foe_read(const std::string& file_name, std::span<uint8_t> buffer);
+  FoEReadValue foe_read(const std::string& file_name, std::span<uint8_t> buffer);
 
 protected:
   // Internal pointer to the actual bus
   EthercatBus* bus_{ nullptr };
+  /**
+   * @brief update_write - callback which gets called __before__ pdo data is sent over the line
+   * @note do not manually call this function
+   */
+  virtual void update_write(const HighPrecisionTimeStamp& tp) = 0;
+  /**
+   * @brief update_read - callback which gets called __after__ pdo data has been read from the line
+   * @note do not manually call this function
+   */
+  virtual void update_read(const HighPrecisionTimeStamp& tp) = 0;
 
 private:
   DeviceInfo device_info_{};
   Hooks hooks_{};
+
+  /**
+   * @brief configure - called by the bus to configure this device instace
+   * @note this may only be called by the bus
+   */
+  void configure(EthercatBus* bus, DeviceInfo device_info);
 };
 
 /**
@@ -357,12 +361,6 @@ public:
     return tx_pdo_last_read_time_;
   }
 
-  // Actual implementation of the write/read functions
-  // These functions copy the data to the ethercat backend
-  // DO NOT call them by hand
-  void update_write(const HighPrecisionTimeStamp& tp) final;
-  void update_read(const HighPrecisionTimeStamp& tp) final;
-
 private:
   bool pdo_initialized = false;
 
@@ -372,6 +370,12 @@ private:
   GenericTXPDO tx_pdo_;
   HighPrecisionTimeStamp tx_pdo_last_read_time_;
   mutable PriorityInheritingMutex pdo_update_mutex_;
+
+  // Actual implementation of the write/read functions
+  // These functions copy the data to the ethercat backend
+  // DO NOT call them by hand
+  void update_write(const HighPrecisionTimeStamp& tp) final;
+  void update_read(const HighPrecisionTimeStamp& tp) final;
 };
 
 }  // namespace duatic::ethercat_interface

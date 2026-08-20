@@ -20,7 +20,6 @@ add_library(duatic_ethercat_interface
   src/internal/soem/soem_backend.cpp
   src/ethercat_device.cpp
   src/bus_diagnostics.cpp
-  src/example/demo.cpp
 )
 add_library(duatic_ethercat_interface::duatic_ethercat_interface ALIAS duatic_ethercat_interface)
 target_compile_features(duatic_ethercat_interface PUBLIC c_std_99 cxx_std_20)  # Require C99 and C++20
@@ -55,6 +54,11 @@ target_compile_options(duatic_ethercat_interface PRIVATE
 # which is appropriate when building the dll but not consuming it.
 target_compile_definitions(duatic_ethercat_interface PRIVATE "duatic_ethercat_interface_BUILDING_LIBRARY")
 
+# Demo
+add_executable(demo ./src/example/demo.cpp)
+target_compile_features(demo PUBLIC c_std_99 cxx_std_20)
+target_include_directories(demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(demo duatic_ethercat_interface)
 
 # Tooling
 find_package(cxxopts REQUIRED)

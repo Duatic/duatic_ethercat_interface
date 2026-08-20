@@ -61,7 +61,7 @@ FoEWriteResult EthercatDeviceBase::foe_write(const std::string& file_name, std::
   return bus_->foe_write(get_device_id(), file_name, data);
 }
 
-FoEReadResult EthercatDeviceBase::foe_read(const std::string& file_name, std::span<uint8_t> buffer)
+FoEReadValue EthercatDeviceBase::foe_read(const std::string& file_name, std::span<uint8_t> buffer)
 {
   if (!bus_) {
     throw std::invalid_argument("Bus had not been initialized yet");

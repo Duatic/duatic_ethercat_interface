@@ -142,10 +142,23 @@ struct RegisterReadResult
     return success;
   }
 };
+template <typename T>
+using RegisterReadValue = ValueDiagnosticsWrapper<T, RegisterReadResult>;
 
 // CoE types
 using SDOIndex = uint16_t;
 using SDOSubIndex = uint8_t;
+
+/* @brief EthercatValueType - the set of trivial, fixed-width value types that the backend can transfer
+ * byte-for-byte over SDO or ESC register access
+ */
+template <typename T>
+concept EthercatValueType = std::same_as<T, bool> || std::same_as<T, int8_t> || std::same_as<T, uint8_t> ||
+    std::same_as<T, int16_t> || std::same_as<T, uint16_t> || std::same_as<T, int32_t> || std::same_as<T, uint32_t> ||
+    std::same_as<T, int64_t> || std::same_as<T, uint64_t> || std::same_as<T, float> || std::same_as<T, double>;
+
+template <typename T>
+concept SdoValueType = EthercatValueType<T> || std::same_as<T, std::string>;
 
 // Types for mailbox diagnostics
 // These are on purpose located in this file as they are used in the access return values
@@ -427,7 +440,6 @@ struct FoEReadResult
   bool success{ false };
   int working_counter{ 0 };
   std::size_t actual_read_size{ 0 };
-  std::span<const uint8_t> data{};
 
   std::optional<MailboxEvent> mailbox_diagnostics{};
 
@@ -436,5 +448,7 @@ struct FoEReadResult
     return success;
   }
 };
+
+using FoEReadValue = ValueDiagnosticsWrapper<std::span<const uint8_t>, FoEReadResult>;
 
 }  // namespace duatic::ethercat_interface

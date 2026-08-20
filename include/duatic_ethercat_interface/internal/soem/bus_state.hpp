@@ -99,7 +99,9 @@ static constexpr EthercatDeviceState map_from_soem_device_state(const ec_state s
       return EthercatDeviceState::SafeOp;
     case ec_state::EC_STATE_OPERATIONAL:
       return EthercatDeviceState::Operational;
-
+    case ec_state::EC_STATE_ACK:
+      // This state is just an additional status bit
+      return EthercatDeviceState::None;
     default:
       return EthercatDeviceState::None;
   }

@@ -101,6 +101,13 @@ static MailboxEvent make_mailbox_event(const ec_errort& e)
       ev.description =
           "Unexpected FoE error on the error list (type " + std::to_string(static_cast<int>(e.Etype)) + ")";
       break;
+    case EC_ERR_TYPE_EOE_INVALID_RX_DATA:
+      ev.protocol = MailboxProtocol::EoE;
+      ev.kind = MailboxEventKind::Unknown;
+      ev.description =
+          "Unexpected EoE error on the error list (type " + std::to_string(static_cast<int>(e.Etype)) + ")";
+      break;
+
     default:
       ev.kind = MailboxEventKind::Unknown;
       ev.description = "Unknown SOEM error type (" + std::to_string(static_cast<int>(e.Etype)) + ")";
@@ -159,6 +166,12 @@ static MailboxEvent make_foe_event(const DeviceId device_id, const int wkc)
       ev.kind = MailboxEventKind::Abort;
       ev.description = "FoE error reported by device";
       break;
+    case EC_ERR_TYPE_EOE_INVALID_RX_DATA:
+      ev.protocol = MailboxProtocol::EoE;
+      ev.kind = MailboxEventKind::Unknown;
+      ev.description = "EoE reported by device";
+      break;
+
     default:
       ev.kind = MailboxEventKind::Unknown;
       ev.description = "FoE failed with code " + std::to_string(wkc);
