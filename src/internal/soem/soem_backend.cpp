@@ -659,6 +659,7 @@ struct EthercatBus::BackendImpl
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (device_id != 0 && !has_device_on_bus(device_id)) {
+      logging::warning(logger_) << "Cannot change device target state - device not on bus: " << device_id;
       return false;
     }
     context_.ecatSlavelist_[device_id].state = target_state;
@@ -1317,13 +1318,19 @@ bool EthercatBus::change_device_state(const DeviceId device_id, const EthercatDe
   const auto soem_state = map_to_soem_device_state(target_state);
   // Request the state change
   bool res = impl_->set_device_target_state(device_id, soem_state);
-
+  if(!res){
+    logging::warning() << "Failed to set desired target state (" << target_state <<")" << "for device: " << device_id << std::endl;
+  }
   // Handle the case that the user does not want to block or that the set command failed
   if (!blocking || !res) {
     return res;
   }
 
-  return impl_->wait_for_device_target_state(device_id, soem_state);
+  const bool success =  impl_->wait_for_device_target_state(device_id, soem_state);
+  if(!success){
+    logging::warning() << "Device went not into desired target state within timeout" << std::endl;
+  }
+  return success;
 }
 
 RegisterReadResult EthercatBus::read_register_untyped(std::span<uint8_t> data, const DeviceId device_id,
