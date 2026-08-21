@@ -1256,7 +1256,9 @@ SDOReadValue<std::string> EthercatBus::sdo_read<std::string>(const DeviceId devi
   }
 
   // Create an std::string out of it
-  return SDOReadValue<std::string>(result, std::string(data.begin(), data.begin() + result.actual_size_read));
+  const std::string_view raw{ data.data(), std::min<std::size_t>(result.actual_size_read, data.size()) };
+  const auto text = raw.substr(0, raw.find('\0'));
+  return SDOReadValue<std::string>(result, std::string(text));
 }
 
 template SDOReadValue<bool> EthercatBus::sdo_read<bool>(DeviceId, SDOIndex, SDOSubIndex);
