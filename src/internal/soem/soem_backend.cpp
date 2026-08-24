@@ -76,6 +76,9 @@ struct EthercatBus::BackendImpl
 
   int initialize()
   {
+    if (get_bus_state() != BusState::PreInit) {
+      throw BackendError("Bus is already initialized", Backend::SOEM);
+    }
     // Initialize the context - this initializes the passed ethernet interface
     if (const auto ec = ecx_init(&context_.context, params_.interface.c_str()); ec <= 0) {
       throw BackendError("Failed to open interface: " + params_.interface + " Run as root!", Backend::SOEM, ec);
@@ -104,7 +107,31 @@ struct EthercatBus::BackendImpl
     }
 
     update_bus_state(BusState::Initialized);
+    // SOEM style iteration - we need to start at 1 because 0 is the master
+    for (int i = 1; i < device_count + 1; i++) {
+      devices_.emplace_back(std::make_shared<EthercatDevice>(owner_, scan(static_cast<DeviceId>(i))));
+    }
+
     return device_count;
+  }
+
+  std::shared_ptr<EthercatDevice> acquire_device(const DeviceId device_id)
+  {
+    if (get_bus_state() != BusState::Initialized) {
+      throw BackendError("You may only aquire devices in the bus state: 'Initialized'", Backend::SOEM);
+    }
+    if (!has_device(device_id)) {
+      throw DeviceNotFound("Device with id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
+    }
+
+    const auto device = std::find_if(devices_.begin(), devices_.end(),
+                                     [device_id](const auto& d) { return d->get_device_id() == device_id; });
+
+    if (device == devices_.end()) {
+      throw BackendError("Backend error - inconstent device states in list", Backend::SOEM);
+    }
+
+    return *device;
   }
 
   const Parameters& get_parameters() const
@@ -219,28 +246,9 @@ struct EthercatBus::BackendImpl
     return context_.ecatSlavecount_;
   }
 
-  std::vector<std::shared_ptr<EthercatDeviceBase>> get_devices() const
+  std::vector<std::shared_ptr<EthercatDevice>> get_devices() const
   {
     return devices_;
-  }
-
-  void attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device)
-  {
-    // As we need to perfrom the right PDO mapping we need to make sure that the bus is in the right state
-    if (get_bus_state() != BusState::Initialized) {
-      throw BackendError("Cannot attach device to bus - bus it not in the correct state", Backend::SOEM);
-    }
-    // Check if the device even is on the bus
-    if (!has_device_on_bus(device_id)) {
-      throw BackendError("Device id: " + std::to_string(device_id) + " not found on the bus", Backend::SOEM);
-    }
-
-    // And that we not already handle a device with this id
-    if (has_device(device_id)) {
-      throw BackendError("Device with id: " + std::to_string(device_id) + " is already handled by this bus",
-                         Backend::SOEM);
-    }
-    devices_.emplace_back(device);
   }
 
   void startup()
@@ -359,6 +367,7 @@ struct EthercatBus::BackendImpl
     // We only initialized the bus - just close the connection
     if (get_bus_state() == BusState::Initialized) {
       std::scoped_lock lock(pdo_update_mutex_, state_mutex_, mailbox_mutex_);
+      devices_.clear();
       update_bus_state(BusState::Shutdown);
 
       ecx_close(&context_.context);
@@ -385,6 +394,7 @@ struct EthercatBus::BackendImpl
 
     {
       std::scoped_lock lock(pdo_update_mutex_, state_mutex_, mailbox_mutex_);
+      devices_.clear();
       ecx_close(&context_.context);
       update_bus_state(BusState::Shutdown);
     }
@@ -762,7 +772,7 @@ private:
   std::optional<HighPrecisionTimeStamp> activation_start_tp_{};
 
   // Device management
-  std::vector<std::shared_ptr<EthercatDeviceBase>> devices_;
+  std::vector<std::shared_ptr<EthercatDevice>> devices_;
 
   // Everything update thread related
   mutable PriorityInheritingMutex pdo_update_mutex_;
@@ -1095,6 +1105,11 @@ int EthercatBus::initialize()
   return impl_->initialize();
 }
 
+EthercatDevicePtr EthercatBus::acquire_device(const DeviceId device_id)
+{
+  return impl_->acquire_device(device_id);
+}
+
 std::optional<std::chrono::nanoseconds> EthercatBus::update_rt()
 {
   return impl_->update_rt();
@@ -1108,15 +1123,6 @@ bool EthercatBus::update_service()
 const EthercatBus::Parameters& EthercatBus::get_parameters() const
 {
   return impl_->get_parameters();
-}
-
-void EthercatBus::attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device)
-{
-  impl_->attach_device(device_id, device);
-  // Important: As the impl_ does not know the bus we need to perform the configure step here
-  const auto scan_result = scan(device_id);
-
-  device->configure(this, scan_result);
 }
 
 bool EthercatBus::has_device(const DeviceId device_id) const
@@ -1406,12 +1412,12 @@ DiagnosticsSnapshot EthercatBus::diagnostics(bool force_update)
 }
 
 // Dispatch functions into a specific ethercat device
-void EthercatBus::dispatch_device_update_write(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp)
+void EthercatBus::dispatch_device_update_write(EthercatDevice& device, const HighPrecisionTimeStamp& tp)
 {
   device.update_write(tp);
 }
 
-void EthercatBus::dispatch_device_update_read(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp)
+void EthercatBus::dispatch_device_update_read(EthercatDevice& device, const HighPrecisionTimeStamp& tp)
 {
   device.update_read(tp);
 }

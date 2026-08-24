@@ -39,8 +39,10 @@
 
 namespace duatic::ethercat_interface
 {
-// Forward declaration of the device base class
-class EthercatDeviceBase;
+// Forward declaration of the device class
+class EthercatDevice;
+// Typedef for the DevicePtr as we might want to swap to a strong ownership enforcing model in the future
+using EthercatDevicePtr = std::shared_ptr<EthercatDevice>;
 
 /**
  * @brief EthercatBus - Implementation of an EthercatMaster around any existing SDK
@@ -59,7 +61,6 @@ class EthercatDeviceBase;
  * shutdown()                                        | not thread safe
  * update_rt()                                       | thread safe
  * update_service()                                  | thread safe
- * attach_device(device_id, device)                  | not thread safe
  * get_parameters()                                  | thread safe
  * has_device(device_id)                             | thread safe
  * has_device_on_bus(device_id)                      | thread safe
@@ -121,6 +122,13 @@ public:
   int initialize();
 
   /**
+   * @brief acquire_device - obtain a reference to the underlaying ethercat device
+   * @return shared ptr to the device
+   * @note not thread safe
+   */
+  EthercatDevicePtr acquire_device(const DeviceId id);
+
+  /**
    * @brief scan - perform a full scan of the configured bus and return a list of all found devices
    * @note not thread safe
    */
@@ -172,12 +180,6 @@ public:
    */
   bool update_service();
 
-  /**
-   * @brief attach_device - let this bus instance handle the specific ethercat device.
-   * Internally it will configure the device with the specific id
-   * @note not thread safe
-   */
-  void attach_device(const DeviceId device_id, std::shared_ptr<EthercatDeviceBase> device);
   /**
    * @brief get_parameters - obtain the configuration objects
    * @return const reference to used Parameters
@@ -335,8 +337,8 @@ private:
   logging::Logger logger_;
 
   // Dispatch functions we keep here in order to have a better access modell in the EthercatDevice classes
-  void dispatch_device_update_write(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp);
-  void dispatch_device_update_read(EthercatDeviceBase& device, const HighPrecisionTimeStamp& tp);
+  void dispatch_device_update_write(EthercatDevice& device, const HighPrecisionTimeStamp& tp);
+  void dispatch_device_update_read(EthercatDevice& device, const HighPrecisionTimeStamp& tp);
 };
 
 // Explicit specialization

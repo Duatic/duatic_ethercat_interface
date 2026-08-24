@@ -39,14 +39,17 @@
 namespace duatic::ethercat_interface
 {
 
-class EthercatDeviceBase
+class EthercatDevice
 {
 public:
+  // PDO typedefs
+  using GenericRXPDO = std::vector<uint8_t>;
+  using GenericTXPDO = std::vector<uint8_t>;
+
   // List of callback functions a user can register
   struct Hooks
   {
     using FunctionPtr = std::function<void(void)>;
-    FunctionPtr on_configure;
     FunctionPtr on_startup;
     FunctionPtr on_pdo_configured;
     FunctionPtr on_pre_activate;
@@ -57,23 +60,18 @@ public:
 
   friend class EthercatBus;
 
-  explicit EthercatDeviceBase(const Hooks& hooks = {});
-  virtual ~EthercatDeviceBase() = default;
+  explicit EthercatDevice(EthercatBus* bus, DeviceInfo device_info);
+  ~EthercatDevice() = default;
 
   // While in theory we could have multiple "EthercatDevice" instances handling the same device
   // it makes sense for consistency to make sure that only one instance of a specific device exists
   // By deleting the copy ctr we can make sure that this is the case
-  EthercatDeviceBase(const EthercatDeviceBase&) = delete;
-  EthercatDeviceBase& operator=(const EthercatDeviceBase&) = delete;
+  EthercatDevice(const EthercatDevice&) = delete;
+  EthercatDevice& operator=(const EthercatDevice&) = delete;
 
-  /**
-   * @brief on_configure - called when the device has been configured on a specific bus
-   */
-  void on_configure()
+  void register_hooks(const Hooks& hooks)
   {
-    if (hooks_.on_configure) {
-      hooks_.on_configure();
-    }
+    hooks_ = hooks;
   }
 
   /**
@@ -156,9 +154,17 @@ public:
    * @brief on_pdo_configured - callback which gets called as soon as the pdos has been setup and configured inn the
    * backend
    */
-  virtual void on_pdo_configured([[maybe_unused]] std::size_t configured_rx_pdo_size,
-                                 [[maybe_unused]] std::size_t configured_tx_pdo_size)
+  void on_pdo_configured([[maybe_unused]] std::size_t configured_rx_pdo_size,
+                         [[maybe_unused]] std::size_t configured_tx_pdo_size)
   {
+    // For the generic device we need to allocate the necessary buffers
+    rx_pdo_.resize(configured_rx_pdo_size, 0);
+    rx_pdo_last_write_time_ = HighPrecisionClock::now();
+    tx_pdo_.resize(configured_tx_pdo_size, 0);
+    tx_pdo_last_read_time_ = HighPrecisionClock::now();
+
+    pdo_initialized = true;
+
     if (hooks_.on_pdo_configured) {
       hooks_.on_pdo_configured();
     }
@@ -206,67 +212,6 @@ public:
    * @note not thread safe
    */
   FoEReadValue foe_read(const std::string& file_name, std::span<uint8_t> buffer);
-
-protected:
-  // Internal pointer to the actual bus
-  EthercatBus* bus_{ nullptr };
-  /**
-   * @brief update_write - callback which gets called __before__ pdo data is sent over the line
-   * @note do not manually call this function
-   */
-  virtual void update_write(const HighPrecisionTimeStamp& tp) = 0;
-  /**
-   * @brief update_read - callback which gets called __after__ pdo data has been read from the line
-   * @note do not manually call this function
-   */
-  virtual void update_read(const HighPrecisionTimeStamp& tp) = 0;
-
-private:
-  DeviceInfo device_info_{};
-  Hooks hooks_{};
-
-  /**
-   * @brief configure - called by the bus to configure this device instace
-   * @note this may only be called by the bus
-   */
-  void configure(EthercatBus* bus, DeviceInfo device_info);
-
-  /**
-   * @brief clear_bus - clear the bus object reference
-   * @note this may only be called by the bus
-   */
-  void clear_bus()
-  {
-    bus_ = nullptr;
-  }
-};
-
-/**
- * @brief a generic wrapper around an ethercat device which allows non typed access to the device
- * @note this is for sdk / tooling usage only
- */
-class GenericEthercatDevice final : public EthercatDeviceBase
-{
-public:
-  using GenericRXPDO = std::vector<uint8_t>;
-  using GenericTXPDO = std::vector<uint8_t>;
-
-  explicit GenericEthercatDevice(const Hooks& hooks = {}) : EthercatDeviceBase(hooks)
-  {
-  }
-
-  void on_pdo_configured(std::size_t configured_rx_pdo_size, std::size_t configured_tx_pdo_size) override
-  {
-    // For the generic device we need to allocate the necessary buffers
-    rx_pdo_.resize(configured_rx_pdo_size, 0);
-    rx_pdo_last_write_time_ = HighPrecisionClock::now();
-    tx_pdo_.resize(configured_tx_pdo_size, 0);
-    tx_pdo_last_read_time_ = HighPrecisionClock::now();
-
-    pdo_initialized = true;
-
-    EthercatDeviceBase::on_pdo_configured(configured_rx_pdo_size, configured_tx_pdo_size);
-  }
 
   /**
    * @brief Access the currently configured RX PDO (rx == data the master sends and the device receives)
@@ -392,20 +337,39 @@ public:
   }
 
 private:
-  bool pdo_initialized = false;
+  // Internal pointer to the actual bus
+  EthercatBus* bus_{ nullptr };
+  /**
+   * @brief update_write - callback which gets called __before__ pdo data is sent over the line
+   * @note do not manually call this function
+   */
+  void update_write(const HighPrecisionTimeStamp& tp);
+  /**
+   * @brief update_read - callback which gets called __after__ pdo data has been read from the line
+   * @note do not manually call this function
+   */
+  void update_read(const HighPrecisionTimeStamp& tp);
 
+  DeviceInfo device_info_{};
+  Hooks hooks_{};
+
+  /**
+   * @brief clear_bus - clear the bus object reference
+   * @note this may only be called by the bus
+   */
+  void clear_bus()
+  {
+    bus_ = nullptr;
+  }
+
+  // PDO related fields
   // Access should only be done via the get/set_generic_pdo methods
+  bool pdo_initialized = false;
   GenericRXPDO rx_pdo_;
   HighPrecisionTimeStamp rx_pdo_last_write_time_;
   GenericTXPDO tx_pdo_;
   HighPrecisionTimeStamp tx_pdo_last_read_time_;
   mutable PriorityInheritingMutex pdo_update_mutex_;
-
-  // Actual implementation of the write/read functions
-  // These functions copy the data to the ethercat backend
-  // DO NOT call them by hand
-  void update_write(const HighPrecisionTimeStamp& tp) final;
-  void update_read(const HighPrecisionTimeStamp& tp) final;
 };
 
 }  // namespace duatic::ethercat_interface

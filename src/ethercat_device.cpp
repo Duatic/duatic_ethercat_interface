@@ -27,18 +27,11 @@
 
 namespace duatic::ethercat_interface
 {
-EthercatDeviceBase::EthercatDeviceBase(const Hooks& hooks) : hooks_(hooks)
+EthercatDevice::EthercatDevice(EthercatBus* bus, DeviceInfo device_info) : bus_(bus), device_info_(device_info)
 {
 }
 
-void EthercatDeviceBase::configure(EthercatBus* bus, DeviceInfo device_info)
-{
-  device_info_ = device_info;
-  bus_ = bus;
-  on_configure();
-}
-
-ObjectDictionary EthercatDeviceBase::read_od(bool full_read) const
+ObjectDictionary EthercatDevice::read_od(bool full_read) const
 {
   if (!bus_) {
     throw std::invalid_argument("Bus had not been initialized yet");
@@ -46,7 +39,7 @@ ObjectDictionary EthercatDeviceBase::read_od(bool full_read) const
   return bus_->read_od(get_device_id(), full_read);
 }
 
-bool EthercatDeviceBase::change_device_state(const EthercatDeviceState target_state, bool blocking)
+bool EthercatDevice::change_device_state(const EthercatDeviceState target_state, bool blocking)
 {
   if (!bus_) {
     throw std::invalid_argument("Bus had not been initialized yet");
@@ -54,7 +47,7 @@ bool EthercatDeviceBase::change_device_state(const EthercatDeviceState target_st
   return bus_->change_device_state(get_device_id(), target_state, blocking);
 }
 
-FoEWriteResult EthercatDeviceBase::foe_write(const std::string& file_name, std::span<const uint8_t> data)
+FoEWriteResult EthercatDevice::foe_write(const std::string& file_name, std::span<const uint8_t> data)
 {
   if (!bus_) {
     throw std::invalid_argument("Bus had not been initialized yet");
@@ -62,7 +55,7 @@ FoEWriteResult EthercatDeviceBase::foe_write(const std::string& file_name, std::
   return bus_->foe_write(get_device_id(), file_name, data);
 }
 
-FoEReadValue EthercatDeviceBase::foe_read(const std::string& file_name, std::span<uint8_t> buffer)
+FoEReadValue EthercatDevice::foe_read(const std::string& file_name, std::span<uint8_t> buffer)
 {
   if (!bus_) {
     throw std::invalid_argument("Bus had not been initialized yet");
@@ -70,14 +63,14 @@ FoEReadValue EthercatDeviceBase::foe_read(const std::string& file_name, std::spa
   return bus_->foe_read(get_device_id(), file_name, buffer);
 }
 
-void GenericEthercatDevice::update_write(const HighPrecisionTimeStamp& tp)
+void EthercatDevice::update_write(const HighPrecisionTimeStamp& tp)
 {
   std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
   bus_->write_rx_pdo(get_device_id(), rx_pdo_);
   rx_pdo_last_write_time_ = tp;
 }
 
-void GenericEthercatDevice::update_read(const HighPrecisionTimeStamp& tp)
+void EthercatDevice::update_read(const HighPrecisionTimeStamp& tp)
 {
   std::lock_guard<PriorityInheritingMutex> lock(pdo_update_mutex_);
   bus_->read_tx_pdo(get_device_id(), tx_pdo_);
