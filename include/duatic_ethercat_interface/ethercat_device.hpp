@@ -60,6 +60,12 @@ public:
   explicit EthercatDeviceBase(const Hooks& hooks = {});
   virtual ~EthercatDeviceBase() = default;
 
+  // While in theory we could have multiple "EthercatDevice" instances handling the same device
+  // it makes sense for consistency to make sure that only one instance of a specific device exists
+  // By deleting the copy ctr we can make sure that this is the case
+  EthercatDeviceBase(const EthercatDeviceBase&) = delete;
+  EthercatDeviceBase& operator=(const EthercatDeviceBase&) = delete;
+
   /**
    * @brief on_configure - called when the device has been configured on a specific bus
    */
