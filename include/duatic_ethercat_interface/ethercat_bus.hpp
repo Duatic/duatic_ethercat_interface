@@ -122,11 +122,11 @@ public:
   int initialize();
 
   /**
-   * @brief aquire_device - obtain a reference to the underlaying ethercat device
+   * @brief acquire_device - obtain a reference to the underlaying ethercat device
    * @return shared ptr to the device
    * @note not thread safe
    */
-  EthercatDevicePtr aquire_device(const DeviceId id);
+  EthercatDevicePtr acquire_device(const DeviceId id);
 
   /**
    * @brief scan - perform a full scan of the configured bus and return a list of all found devices

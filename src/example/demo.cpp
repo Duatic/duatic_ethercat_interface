@@ -87,7 +87,7 @@ int main(void)
   std::array<uint8_t, 8> data;
   bus->read_sdo_untyped(data, 1, 1, 0);
 
-  drive = std::make_unique<Drive>(bus->aquire_device(device_id));
+  drive = std::make_unique<Drive>(bus->acquire_device(device_id));
 
   bus->startup();
   bus->activate();

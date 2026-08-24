@@ -112,7 +112,7 @@ struct EthercatBus::BackendImpl
     return device_count;
   }
 
-  std::shared_ptr<EthercatDevice> aquire_device(const DeviceId device_id)
+  std::shared_ptr<EthercatDevice> acquire_device(const DeviceId device_id)
   {
     if (get_bus_state() != BusState::Initialized) {
       throw BackendError("You may only aquire devices in the bus state: 'Initialized'", Backend::SOEM);
@@ -1100,9 +1100,9 @@ int EthercatBus::initialize()
   return impl_->initialize();
 }
 
-EthercatDevicePtr EthercatBus::aquire_device(const DeviceId device_id)
+EthercatDevicePtr EthercatBus::acquire_device(const DeviceId device_id)
 {
-  return impl_->aquire_device(device_id);
+  return impl_->acquire_device(device_id);
 }
 
 std::optional<std::chrono::nanoseconds> EthercatBus::update_rt()
