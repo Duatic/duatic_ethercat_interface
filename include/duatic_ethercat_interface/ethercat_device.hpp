@@ -69,9 +69,20 @@ public:
   EthercatDevice(const EthercatDevice&) = delete;
   EthercatDevice& operator=(const EthercatDevice&) = delete;
 
+  /**
+   * @brief register_hooks - register as set of callbacks from the consuming class
+   */
   void register_hooks(const Hooks& hooks)
   {
     hooks_ = hooks;
+  }
+
+  /**
+   * @brief reset_hooks - de-register the registered callbacks (overwrite with null)
+   */
+  void reset_hooks()
+  {
+    hooks_ = {};
   }
 
   /**
