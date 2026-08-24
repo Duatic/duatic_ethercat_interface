@@ -43,10 +43,10 @@ struct TX
 class Drive
 {
 public:
-  using Device = GenericEthercatDevice;
+  using Device = EthercatDevice;
   using DevicePtr = std::shared_ptr<Device>;
 
-  Drive() : device_(std::make_shared<Device>())
+  explicit Drive(DevicePtr device) : device_(device)
   {
   }
 
@@ -74,7 +74,7 @@ private:
   DevicePtr device_{};
 };
 
-Drive drive;
+std::unique_ptr<Drive> drive;
 DeviceId device_id = 1;
 
 int main(void)
@@ -87,8 +87,7 @@ int main(void)
   std::array<uint8_t, 8> data;
   bus->read_sdo_untyped(data, 1, 1, 0);
 
-  // Usage with device
-  bus->attach_device(device_id, drive.get_device());
+  drive = std::make_unique<Drive>(bus->aquire_device(device_id));
 
   bus->startup();
   bus->activate();
@@ -111,11 +110,11 @@ int main(void)
 void second_thread()
 {
   // Asynchronous sdo read/writes
-  drive.do_something();
+  drive->do_something();
 
   // Or access readings
-  drive.get_reading();
+  drive->get_reading();
 
   // Or write commands
-  drive.set_command(1);
+  drive->set_command(1);
 }
