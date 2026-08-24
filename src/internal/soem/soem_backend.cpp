@@ -103,13 +103,13 @@ struct EthercatBus::BackendImpl
       logging::warning(logger_) << "ESC Port Diagnostics is enabled - this has a  veryhigh impact on the timing";
     }
 
+    update_bus_state(BusState::Initialized);
     // SOEM style iteration - we need to start at 1 because 0 is the master
     for (int i = 1; i < device_count + 1; i++) {
       assert(i >= 0);
       devices_.emplace_back(std::make_shared<EthercatDevice>(owner_, scan(static_cast<DeviceId>(i))));
     }
 
-    update_bus_state(BusState::Initialized);
     return device_count;
   }
 
