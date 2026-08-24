@@ -46,7 +46,7 @@ public:
   using Device = EthercatDevice;
   using DevicePtr = std::shared_ptr<Device>;
 
-  explicit Drive(DevicePtr device) : device_(device)
+  explicit Drive(DevicePtr device) : device_(std::move(device))
   {
   }
 
