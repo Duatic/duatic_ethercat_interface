@@ -61,7 +61,7 @@ public:
   friend class EthercatBus;
 
   explicit EthercatDevice(EthercatBus* bus, DeviceInfo device_info);
-  virtual ~EthercatDevice() = default;
+  ~EthercatDevice() = default;
 
   // While in theory we could have multiple "EthercatDevice" instances handling the same device
   // it makes sense for consistency to make sure that only one instance of a specific device exists
@@ -154,8 +154,8 @@ public:
    * @brief on_pdo_configured - callback which gets called as soon as the pdos has been setup and configured inn the
    * backend
    */
-  virtual void on_pdo_configured([[maybe_unused]] std::size_t configured_rx_pdo_size,
-                                 [[maybe_unused]] std::size_t configured_tx_pdo_size)
+  void on_pdo_configured([[maybe_unused]] std::size_t configured_rx_pdo_size,
+                         [[maybe_unused]] std::size_t configured_tx_pdo_size)
   {
     // For the generic device we need to allocate the necessary buffers
     rx_pdo_.resize(configured_rx_pdo_size, 0);
