@@ -76,6 +76,9 @@ struct EthercatBus::BackendImpl
 
   int initialize()
   {
+    if (get_bus_state() != BusState::PreInit) {
+      throw BackendError("Bus is already initialized", Backend::SOEM);
+    }
     // Initialize the context - this initializes the passed ethernet interface
     if (const auto ec = ecx_init(&context_.context, params_.interface.c_str()); ec <= 0) {
       throw BackendError("Failed to open interface: " + params_.interface + " Run as root!", Backend::SOEM, ec);
@@ -364,6 +367,7 @@ struct EthercatBus::BackendImpl
     // We only initialized the bus - just close the connection
     if (get_bus_state() == BusState::Initialized) {
       std::scoped_lock lock(pdo_update_mutex_, state_mutex_, mailbox_mutex_);
+      devices_.clear();
       update_bus_state(BusState::Shutdown);
 
       ecx_close(&context_.context);
@@ -390,6 +394,7 @@ struct EthercatBus::BackendImpl
 
     {
       std::scoped_lock lock(pdo_update_mutex_, state_mutex_, mailbox_mutex_);
+      devices_.clear();
       ecx_close(&context_.context);
       update_bus_state(BusState::Shutdown);
     }
