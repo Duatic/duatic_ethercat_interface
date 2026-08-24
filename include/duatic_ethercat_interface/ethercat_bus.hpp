@@ -39,8 +39,10 @@
 
 namespace duatic::ethercat_interface
 {
-// Forward declaration of the device base class
+// Forward declaration of the device class
 class EthercatDevice;
+// Typedef for the DevicePtr as we might want to swap to a strong ownership enforcing model in the future
+using EthercatDevicePtr = std::shared_ptr<EthercatDevice>;
 
 /**
  * @brief EthercatBus - Implementation of an EthercatMaster around any existing SDK
@@ -124,7 +126,7 @@ public:
    * @return shared ptr to the device
    * @note not thread safe
    */
-  std::shared_ptr<EthercatDevice> aquire_device(const DeviceId id);
+  EthercatDevicePtr aquire_device(const DeviceId id);
 
   /**
    * @brief scan - perform a full scan of the configured bus and return a list of all found devices

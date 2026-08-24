@@ -103,8 +103,10 @@ struct EthercatBus::BackendImpl
       logging::warning(logger_) << "ESC Port Diagnostics is enabled - this has a  veryhigh impact on the timing";
     }
 
+    // SOEM style iteration - we need to start at 1 because 0 is the master
     for (int i = 1; i < device_count + 1; i++) {
-      devices_.emplace_back(std::make_shared<EthercatDevice>(owner_, scan(i)));
+      assert(i >= 0);
+      devices_.emplace_back(std::make_shared<EthercatDevice>(owner_, scan(static_cast<DeviceId>(i))));
     }
 
     update_bus_state(BusState::Initialized);
@@ -121,7 +123,7 @@ struct EthercatBus::BackendImpl
     }
 
     const auto device = std::find_if(devices_.begin(), devices_.end(),
-                                     [device_id](const auto& device) { return device->get_device_id() == device_id; });
+                                     [device_id](const auto& d) { return d->get_device_id() == device_id; });
 
     if (device == devices_.end()) {
       throw BackendError("Backend error - inconstent device states in list", Backend::SOEM);
@@ -1099,7 +1101,7 @@ int EthercatBus::initialize()
   return impl_->initialize();
 }
 
-std::shared_ptr<EthercatDevice> EthercatBus::aquire_device(const DeviceId device_id)
+EthercatDevicePtr EthercatBus::aquire_device(const DeviceId device_id)
 {
   return impl_->aquire_device(device_id);
 }
