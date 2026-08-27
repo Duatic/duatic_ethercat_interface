@@ -661,10 +661,11 @@ struct EthercatBus::BackendImpl
 
     return FoEReadValue(FoEReadResult{ .success = true,
                                        .working_counter = wkc,
-                                       .actual_read_size = static_cast<std::size_t>(actual_size),
+                                       .actual_read_size = static_cast<std::size_t>(
+                                           std::min(static_cast<std::size_t>(actual_size), buffer.size())),
 
                                        .mailbox_diagnostics = event },
-                        std::span(buffer.data(), static_cast<std::size_t>(actual_size)));
+                        std::span(buffer.data(), std::min(static_cast<std::size_t>(actual_size), buffer.size())));
   }
 
   bool set_device_target_state(const DeviceId device_id, ec_state target_state)
