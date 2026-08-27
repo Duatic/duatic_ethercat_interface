@@ -73,7 +73,8 @@ void handle_sdo(const std::string& interface, const bool read_sdos)
 
     std::cout << info << std::endl;
     for (const auto& sdo : od.entries()) {
-      std::cout << "  [" << std::hex << "0x" << sdo.index << std::dec << "]"  << ": " << sdo.name<< std::endl;
+      std::cout << "  [" << std::hex << "0x" << sdo.index << std::dec << "]"
+                << ": " << sdo.name << std::endl;
 
       std::cout << "   object type: " << sdo.obj_type << std::endl;
       if (sdo.sub_entries.empty()) {
@@ -85,7 +86,8 @@ void handle_sdo(const std::string& interface, const bool read_sdos)
       }
 
       for (const auto& sub : sdo.sub_entries) {
-        std::cout << "     [0x" << std::hex << static_cast<int>(sub.index) << std::dec << "]: " << sub.name << std::endl;
+        std::cout << "     [0x" << std::hex << static_cast<int>(sub.index) << std::dec << "]: " << sub.name
+                  << std::endl;
         std::cout << "      data_type: " << sub.data_type << std::endl;
         if (read_sdos) {
           std::cout << "      value: " << internal::sdo_print_helper(bus, info.id, sdo.index, sub.index, sub.data_type)

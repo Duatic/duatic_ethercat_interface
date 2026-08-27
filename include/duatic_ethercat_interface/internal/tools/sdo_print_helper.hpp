@@ -30,7 +30,6 @@
 #include <string>       // NOLINT(build/include_order)
 #include <type_traits>  // NOLINT(build/include_order)
 
-
 #include "duatic_ethercat_interface/ethercat_bus.hpp"
 
 namespace duatic::ethercat_interface::internal
@@ -39,8 +38,7 @@ namespace duatic::ethercat_interface::internal
 // Only assumption about ValueDiagnosticsWrapper: contextual bool + .value
 template <typename T>
 std::string sdo_read_as(EthercatBus& bus, const DeviceId id, const SDOIndex index, const SDOSubIndex sub)
-{ 
-
+{
   const SDOReadValue<T> read = bus.sdo_read<T>(id, index, sub);
   if (!read.has_value()) {
     return "error";
