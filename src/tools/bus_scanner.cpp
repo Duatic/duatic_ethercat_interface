@@ -73,8 +73,7 @@ void handle_sdo(const std::string& interface, const bool read_sdos)
 
     std::cout << info << std::endl;
     for (const auto& sdo : od.entries()) {
-      std::cout << "  [" << std::hex << "0x" << sdo.index << std::dec << "]" << std::endl;
-      std::cout << "   name: " << sdo.name << std::endl;
+      std::cout << "  [" << std::hex << "0x" << sdo.index << std::dec << "]"  << ": " << sdo.name<< std::endl;
 
       std::cout << "   object type: " << sdo.obj_type << std::endl;
       if (sdo.sub_entries.empty()) {
@@ -86,11 +85,10 @@ void handle_sdo(const std::string& interface, const bool read_sdos)
       }
 
       for (const auto& sub : sdo.sub_entries) {
-        std::cout << "     [0x" << std::hex << static_cast<int>(sub.index) << std::dec << "]" << std::endl;
-        std::cout << "      name: " << sub.name << std::endl;
+        std::cout << "     [0x" << std::hex << static_cast<int>(sub.index) << std::dec << "]: " << sub.name << std::endl;
         std::cout << "      data_type: " << sub.data_type << std::endl;
         if (read_sdos) {
-          std::cout << "      value: " << internal::sdo_print_helper(bus, info.id, sdo.index, sub.index, sdo.data_type)
+          std::cout << "      value: " << internal::sdo_print_helper(bus, info.id, sdo.index, sub.index, sub.data_type)
                     << std::endl;
         }
       }
@@ -106,7 +104,7 @@ int main(int argc, char** argv)
     options.add_options()
         ("verb", "Actions to perform [scan, list_interfaces, sdo]", cxxopts::value<std::string>())
         ("b,bus", "Ethercat Bus", cxxopts::value<std::string>()->default_value("eth0"))
-        ("s,sdo", "Actually read SDOs", cxxopts::value<bool>()->default_value("false"))
+        ("read", "Actually read SDOs", cxxopts::value<bool>()->default_value("false"))
         ("h,help", "Print usage");
   // clang-format on
 
@@ -143,7 +141,7 @@ int main(int argc, char** argv)
     }
 
     if (verb == "sdo") {
-      handle_sdo(bus, args["sdo"].as<bool>());
+      handle_sdo(bus, args["read"].as<bool>());
       return 0;
     }
   } catch (const std::exception& ex) {

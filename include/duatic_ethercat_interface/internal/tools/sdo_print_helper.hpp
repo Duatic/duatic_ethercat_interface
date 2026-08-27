@@ -30,6 +30,7 @@
 #include <string>       // NOLINT(build/include_order)
 #include <type_traits>  // NOLINT(build/include_order)
 
+
 #include "duatic_ethercat_interface/ethercat_bus.hpp"
 
 namespace duatic::ethercat_interface::internal
@@ -38,7 +39,8 @@ namespace duatic::ethercat_interface::internal
 // Only assumption about ValueDiagnosticsWrapper: contextual bool + .value
 template <typename T>
 std::string sdo_read_as(EthercatBus& bus, const DeviceId id, const SDOIndex index, const SDOSubIndex sub)
-{
+{ 
+
   const SDOReadValue<T> read = bus.sdo_read<T>(id, index, sub);
   if (!read.has_value()) {
     return "error";
@@ -86,56 +88,60 @@ std::string sdo_read_bits(EthercatBus& bus, const DeviceId id, const SDOIndex in
 std::string sdo_print_helper(EthercatBus& bus, const DeviceId device_id, const SDOIndex index,
                              const SDOSubIndex sub_index, const DataType sdo_data_type)
 {
-  if (sdo_data_type >= DataType::BIT1 && sdo_data_type <= DataType::BIT8) {
-    const unsigned bits = static_cast<uint16_t>(sdo_data_type) - static_cast<uint16_t>(DataType::BIT1) + 1U;
-    return sdo_read_bits(bus, device_id, index, sub_index, bits);
-  }
+  try {
+    if (sdo_data_type >= DataType::BIT1 && sdo_data_type <= DataType::BIT8) {
+      const unsigned bits = static_cast<uint16_t>(sdo_data_type) - static_cast<uint16_t>(DataType::BIT1) + 1U;
+      return sdo_read_bits(bus, device_id, index, sub_index, bits);
+    }
 
-  switch (sdo_data_type) {
-    case DataType::BOOLEAN:
-      return sdo_read_as<bool>(bus, device_id, index, sub_index);
-    case DataType::INTEGER8:
-      return sdo_read_as<int8_t>(bus, device_id, index, sub_index);
-    case DataType::INTEGER16:
-      return sdo_read_as<int16_t>(bus, device_id, index, sub_index);
-    case DataType::INTEGER32:
-      return sdo_read_as<int32_t>(bus, device_id, index, sub_index);
-    case DataType::INTEGER64:
-      return sdo_read_as<int64_t>(bus, device_id, index, sub_index);
-    case DataType::UNSIGNED8:
-      return sdo_read_as<uint8_t>(bus, device_id, index, sub_index);
-    case DataType::UNSIGNED16:
-      return sdo_read_as<uint16_t>(bus, device_id, index, sub_index);
-    case DataType::UNSIGNED32:
-      return sdo_read_as<uint32_t>(bus, device_id, index, sub_index);
-    case DataType::UNSIGNED64:
-      return sdo_read_as<uint64_t>(bus, device_id, index, sub_index);
-    case DataType::REAL32:
-      return sdo_read_as<float>(bus, device_id, index, sub_index);
-    case DataType::REAL64:
-      return sdo_read_as<double>(bus, device_id, index, sub_index);
-    case DataType::VISIBLE_STRING:
-      return sdo_read_as<std::string>(bus, device_id, index, sub_index);
+    switch (sdo_data_type) {
+      case DataType::BOOLEAN:
+        return sdo_read_as<bool>(bus, device_id, index, sub_index);
+      case DataType::INTEGER8:
+        return sdo_read_as<int8_t>(bus, device_id, index, sub_index);
+      case DataType::INTEGER16:
+        return sdo_read_as<int16_t>(bus, device_id, index, sub_index);
+      case DataType::INTEGER32:
+        return sdo_read_as<int32_t>(bus, device_id, index, sub_index);
+      case DataType::INTEGER64:
+        return sdo_read_as<int64_t>(bus, device_id, index, sub_index);
+      case DataType::UNSIGNED8:
+        return sdo_read_as<uint8_t>(bus, device_id, index, sub_index);
+      case DataType::UNSIGNED16:
+        return sdo_read_as<uint16_t>(bus, device_id, index, sub_index);
+      case DataType::UNSIGNED32:
+        return sdo_read_as<uint32_t>(bus, device_id, index, sub_index);
+      case DataType::UNSIGNED64:
+        return sdo_read_as<uint64_t>(bus, device_id, index, sub_index);
+      case DataType::REAL32:
+        return sdo_read_as<float>(bus, device_id, index, sub_index);
+      case DataType::REAL64:
+        return sdo_read_as<double>(bus, device_id, index, sub_index);
+      case DataType::VISIBLE_STRING:
+        return sdo_read_as<std::string>(bus, device_id, index, sub_index);
 
-    case DataType::INTEGER24:
-      return sdo_read_odd_int(bus, device_id, index, sub_index, 3, true);
-    case DataType::INTEGER40:
-      return sdo_read_odd_int(bus, device_id, index, sub_index, 5, true);
-    case DataType::INTEGER48:
-      return sdo_read_odd_int(bus, device_id, index, sub_index, 6, true);
-    case DataType::INTEGER56:
-      return sdo_read_odd_int(bus, device_id, index, sub_index, 7, true);
-    case DataType::UNSIGNED24:
-      return sdo_read_odd_int(bus, device_id, index, sub_index, 3, false);
-    case DataType::UNSIGNED40:
-      return sdo_read_odd_int(bus, device_id, index, sub_index, 5, false);
-    case DataType::UNSIGNED48:
-      return sdo_read_odd_int(bus, device_id, index, sub_index, 6, false);
-    case DataType::UNSIGNED56:
-      return sdo_read_odd_int(bus, device_id, index, sub_index, 7, false);
+      case DataType::INTEGER24:
+        return sdo_read_odd_int(bus, device_id, index, sub_index, 3, true);
+      case DataType::INTEGER40:
+        return sdo_read_odd_int(bus, device_id, index, sub_index, 5, true);
+      case DataType::INTEGER48:
+        return sdo_read_odd_int(bus, device_id, index, sub_index, 6, true);
+      case DataType::INTEGER56:
+        return sdo_read_odd_int(bus, device_id, index, sub_index, 7, true);
+      case DataType::UNSIGNED24:
+        return sdo_read_odd_int(bus, device_id, index, sub_index, 3, false);
+      case DataType::UNSIGNED40:
+        return sdo_read_odd_int(bus, device_id, index, sub_index, 5, false);
+      case DataType::UNSIGNED48:
+        return sdo_read_odd_int(bus, device_id, index, sub_index, 6, false);
+      case DataType::UNSIGNED56:
+        return sdo_read_odd_int(bus, device_id, index, sub_index, 7, false);
 
-    default:
-      return "error";  // unsupported type
+      default:
+        return "error";  // unsupported type
+    }
+  } catch (const std::runtime_error& ex) {
+    return "error: " + std::string(ex.what());
   }
 }
 }  // namespace duatic::ethercat_interface::internal
