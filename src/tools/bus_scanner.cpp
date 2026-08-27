@@ -29,6 +29,7 @@
 #include <cxxopts.hpp>
 
 #include <duatic_ethercat_interface/ethercat_bus.hpp>
+#include <duatic_ethercat_interface/internal/tools/sdo_print_helper.hpp>
 
 using namespace duatic::ethercat_interface;  // NOLINT(build/namespaces)
 
@@ -58,7 +59,7 @@ void handle_scan(const std::string& interface)
   }
 }
 
-void handle_sdo(const std::string& interface)
+void handle_sdo(const std::string& interface, const bool read_sdos)
 {
   EthercatBus bus(EthercatBus::Parameters{ .interface = interface });
 
@@ -78,12 +79,20 @@ void handle_sdo(const std::string& interface)
       std::cout << "   object type: " << sdo.obj_type << std::endl;
       if (sdo.sub_entries.empty()) {
         std::cout << "   data type: " << sdo.data_type << std::endl;
+        if (read_sdos) {
+          std::cout << "   value: " << internal::sdo_print_helper(bus, info.id, sdo.index, 0, sdo.data_type)
+                    << std::endl;
+        }
       }
 
       for (const auto& sub : sdo.sub_entries) {
         std::cout << "     [0x" << std::hex << static_cast<int>(sub.index) << std::dec << "]" << std::endl;
         std::cout << "      name: " << sub.name << std::endl;
         std::cout << "      data_type: " << sub.data_type << std::endl;
+        if (read_sdos) {
+          std::cout << "      value: " << internal::sdo_print_helper(bus, info.id, sdo.index, sub.index, sdo.data_type)
+                    << std::endl;
+        }
       }
     }
   }
@@ -97,6 +106,7 @@ int main(int argc, char** argv)
     options.add_options()
         ("verb", "Actions to perform [scan, list_interfaces, sdo]", cxxopts::value<std::string>())
         ("b,bus", "Ethercat Bus", cxxopts::value<std::string>()->default_value("eth0"))
+        ("s,sdo", "Actually read SDOs", cxxopts::value<bool>()->default_value("false"))
         ("h,help", "Print usage");
   // clang-format on
 
@@ -133,7 +143,7 @@ int main(int argc, char** argv)
     }
 
     if (verb == "sdo") {
-      handle_sdo(bus);
+      handle_sdo(bus, args["sdo"].as<bool>());
       return 0;
     }
   } catch (const std::exception& ex) {
