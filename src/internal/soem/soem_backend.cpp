@@ -394,13 +394,15 @@ struct EthercatBus::BackendImpl
 
     {
       std::scoped_lock lock(pdo_update_mutex_, state_mutex_, mailbox_mutex_);
-      devices_.clear();
+
       ecx_close(&context_.context);
       update_bus_state(BusState::Shutdown);
     }
     for (auto& device : devices_) {
       device->on_post_shutdown();
     }
+    // must be run after calling on post shutdown
+    devices_.clear();
   }
 
   bool has_device(const DeviceId device_id) const
