@@ -86,6 +86,17 @@ std::string to_string(const DiagnosticsSnapshot& snap)
       os << "          port " << p << ": " << (port.link_up ? "up  " : "down") << "  invalid=" << port.invalid_frames
          << "  rx_err=" << port.rx_errors << "  lost_links=" << port.lost_links << "\n";
     }
+
+    std::string active_ports_list;
+    for (std::size_t p = 0; p < s.topology.active_ports.size(); ++p) {
+      if (s.topology.active_ports[p]) {
+        active_ports_list += (active_ports_list.empty() ? "" : ",") + std::to_string(p);
+      }
+    }
+    os << "        topology: parent=" << s.topology.parent << " (port " << static_cast<int>(s.topology.parent_port)
+       << " -> entry port " << static_cast<int>(s.topology.entry_port) << ")"
+       << "  active_ports=[" << active_ports_list << "]"
+       << "  propagation_delay=" << s.topology.propagation_delay_ns << " ns\n";
   }
 
   // Executor (optional)

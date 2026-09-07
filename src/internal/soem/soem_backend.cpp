@@ -96,6 +96,19 @@ struct EthercatBus::BackendImpl
       latest_diagnostics_.slaves.resize(static_cast<std::size_t>(context_.ecatSlavecount_));
     }
 
+    // Topology is already fully determined by ecx_config_init() above - capture it now,
+    // unconditionally (it costs nothing and is unrelated to DiagnosticsOptions). parent_port /
+    // entry_port / propagation_delay_ns are not valid yet - startup()'s DC configuration pass
+    // fills those in once it has run.
+    for (int i = 1; i <= context_.ecatSlavecount_; i++) {
+      auto& topology = latest_diagnostics_.slaves[static_cast<std::size_t>(i - 1)].topology;
+      topology.parent = static_cast<DeviceId>(context_.ecatSlavelist_[i].parent);
+      const auto active_ports_mask = context_.ecatSlavelist_[i].activeports;
+      for (std::size_t port = 0; port < topology.active_ports.size(); ++port) {
+        topology.active_ports[port] = (active_ports_mask & (1U << port)) != 0;
+      }
+    }
+
     // Print some general information about some parameters
     if (is_diagnostics_enabled(params_.diagnostics.pdo_diagnostics)) {
       logging::info(logger_) << "Bus Diagnostics is enabled - this has a low impact on the timing";
@@ -300,6 +313,16 @@ struct EthercatBus::BackendImpl
         logger_.info("No devices with DC support found on the bus");
       }
     }
+    // ecx_configdc() has now measured each slave's DC propagation delay and port linkage
+    // regardless of whether dc_enabled/hasdc is set for it - capture that unconditionally, same
+    // as the topology fields captured in initialize().
+    for (uint16_t i = 1; i <= static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
+      auto& topology = latest_diagnostics_.slaves[static_cast<std::size_t>(i - 1)].topology;
+      topology.parent_port = context_.ecatSlavelist_[i].parentport;
+      topology.entry_port = context_.ecatSlavelist_[i].entryport;
+      topology.propagation_delay_ns = context_.ecatSlavelist_[i].pdelay;
+    }
+
     // Setup dc sync (NOTE we only support sync0 at the moment)
     if (params_.dc_enabled) {
       for (uint16_t i = 1; i <= static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
