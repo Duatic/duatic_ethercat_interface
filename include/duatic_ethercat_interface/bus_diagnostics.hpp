@@ -112,6 +112,21 @@ struct ESCPortHealth
   uint32_t lost_links{ 0 };
 };
 
+// One-time topology/DC-propagation-delay facts SOEM computes during bus bring-up. `parent` and
+// `active_ports` are valid as soon as initialize() has run; `parent_port`/`entry_port`/
+// `propagation_delay_ns` are only valid once startup() has completed its DC configuration pass -
+// reading them any earlier yields zero. Unlike the rest of ESCStatus, none of these are gated
+// behind DiagnosticsOptions (they cost nothing to capture) and none are refreshed again after
+// bring-up.
+struct DeviceTopology
+{
+  DeviceId parent = 0;                 // parent slave id in the physical chain, 0 = master
+  uint8_t parent_port = 0;             // port on the parent this slave is connected to
+  uint8_t entry_port = 0;              // port on this slave the parent is connected to
+  std::array<bool, 4> active_ports{};  // active_ports[N] true if port N has an active link
+  int32_t propagation_delay_ns = 0;    // one-time DC propagation delay measurement, nanoseconds
+};
+
 // Diagnostic status of a single slave's ESC. All fields except `online`
 // are sourced from ESC registers (AL Status, AL Status Code, DL layer);
 // `online` is inferred by the master, not read from the slave.
@@ -144,6 +159,10 @@ struct ESCStatus
   // As the ESC diagnostics is costly to read we maintain seperate timestamps
   // for the port diagnostics
   HighPrecisionTimeStamp ports_update_timestamp;
+
+  // This slave's position in the physical chain - see DeviceTopology's own doc comment for the
+  // two-phase validity caveat.
+  DeviceTopology topology{};
 };
 
 // Bus-wide diagnostics, sourced from the master's own telemetry rather
