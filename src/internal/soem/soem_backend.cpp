@@ -1007,13 +1007,24 @@ private:
     if (current_selected_diagnostics_slave_ >= static_cast<std::size_t>(context_.ecatSlavecount_)) {
       current_selected_diagnostics_slave_ = 0;
     }
-    update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
-                                  latest_diagnostics_.slaves[current_selected_diagnostics_slave_]);
-    latest_diagnostics_.slaves[current_selected_diagnostics_slave_].ports_update_timestamp = HighPrecisionClock::now();
+    const auto config_adr = context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr;
+
+    // Slow (bus round-trip via ecx_FPRD): computed into locals, no lock held.
+    const auto ports = read_slave_port_diagnostics(config_adr);
+
+    // Fast (struct copy only): diagnostics_mutex_ is held just long enough to publish the
+    // result, consistent with its role for the rest of latest_diagnostics_.slaves (see
+    // update_diagnostics_fast()) - never held across the register reads above.
+    {
+      std::lock_guard<std::mutex> lock(diagnostics_mutex_);
+      latest_diagnostics_.slaves[current_selected_diagnostics_slave_].ports = ports;
+      latest_diagnostics_.slaves[current_selected_diagnostics_slave_].ports_update_timestamp =
+          HighPrecisionClock::now();
+    }
     current_selected_diagnostics_slave_ += 1;
   }
 
-  void update_slave_port_diagnostics(const uint16 config_adr, ESCStatus& status)
+  std::array<ESCPortHealth, 4> read_slave_port_diagnostics(const uint16 config_adr)
   {
     constexpr uint16_t DL_STATUS = 0x0110;          // 2 bytes: link/loop/comm status
     constexpr uint16_t RX_ERROR_COUNTER = 0x0300;   // 8 bytes: 2 per port (invalid, rx err) x4
@@ -1027,14 +1038,16 @@ private:
     uint8_t lost_link[4] = {};
     ecx_FPRD(&context_.ecat_port, config_adr, LOST_LINK_COUNTER, sizeof(lost_link), lost_link, EC_TIMEOUTRET);
 
+    std::array<ESCPortHealth, 4> ports{};
     for (std::size_t p = 0; p < 4; ++p) {
       // Physical link bits per port sit at bits 4-7 of DL Status.
       // VERIFY bit layout against your ESC datasheet.
-      status.ports[p].link_up = (dl_status & (1u << (4 + p))) != 0;
-      status.ports[p].invalid_frames = rx_err[p * 2];
-      status.ports[p].rx_errors = rx_err[p * 2 + 1];
-      status.ports[p].lost_links = lost_link[p];
+      ports[p].link_up = (dl_status & (1u << (4 + p))) != 0;
+      ports[p].invalid_frames = rx_err[p * 2];
+      ports[p].rx_errors = rx_err[p * 2 + 1];
+      ports[p].lost_links = lost_link[p];
     }
+    return ports;
   }
 
   /// Empties SOEM's error list. The first event attributable to `acc` is returned,
