@@ -114,10 +114,15 @@ struct ESCPortHealth
 
 // One-time topology/DC-propagation-delay facts SOEM computes during bus bring-up. `parent` and
 // `active_ports` are valid as soon as initialize() has run; `parent_port`/`entry_port`/
-// `propagation_delay_ns` are only valid once startup() has completed its DC configuration pass -
-// reading them any earlier yields zero. Unlike the rest of ESCStatus, none of these are gated
-// behind DiagnosticsOptions (they cost nothing to capture) and none are refreshed again after
-// bring-up.
+// `propagation_delay_ns`/`dc_next`/`dc_previous`/`dc_port_receive_time_ns` are only valid once
+// startup() has completed its DC configuration pass - reading them any earlier yields zero.
+// Unlike the rest of ESCStatus, none of these are gated behind DiagnosticsOptions (they cost
+// nothing to capture) and none are refreshed again after bring-up.
+//
+// Note: `active_ports` here is a permanent bring-up snapshot, distinct from the live,
+// round-robin-refreshed `ESCPortHealth::link_up` on the same slave's `ports` array - the two can
+// legitimately disagree after bring-up (e.g. a port that comes up later, or a cable pulled after
+// initialize() ran).
 struct DeviceTopology
 {
   DeviceId parent = 0;                 // parent slave id in the physical chain, 0 = master
@@ -125,6 +130,9 @@ struct DeviceTopology
   uint8_t entry_port = 0;              // port on this slave the parent is connected to
   std::array<bool, 4> active_ports{};  // active_ports[N] true if port N has an active link
   int32_t propagation_delay_ns = 0;    // one-time DC propagation delay measurement, nanoseconds
+  DeviceId dc_next = 0;                // next slave in the DC sync chain, 0 = none
+  DeviceId dc_previous = 0;            // previous slave in the DC sync chain, 0 = none/master
+  std::array<int32_t, 4> dc_port_receive_time_ns{};  // per-port DC receive timestamps (DCrtA-D)
 };
 
 // Diagnostic status of a single slave's ESC. All fields except `online`
@@ -169,13 +177,23 @@ struct ESCStatus
 // than from any single slave's ESC.
 struct BusStatus
 {
-  // Physical link state of the master's own network interface. Distinct
-  // from any slave's ESCPortHealth::link_up.
-  // will currently always read true
+  // Physical link state of the master's own network interface (nic::is_up(): administratively
+  // up per SIOCGIFFLAGS, not a carrier/cable-present check). Distinct from any slave's
+  // ESCPortHealth::link_up. Captured once at initialize(), then refreshed every service-thread
+  // tick (~every service_thread_update_rate, 2 ms by default) for as long as a SingleBusExecutor
+  // is spinning - a cable pulled mid-run will show up here within about one tick. If no executor
+  // is ever spun (e.g. a bus used only for scan()/SDO access), this stays at its
+  // initialize()-time value.
   bool link_up = true;
 
-  // Cumulative number of EtherCAT frames sent by the master since
-  // [master start / activation — confirm & document the reset point].
+  // frames_sent/frames_lost/wkc_mismatches below are only incremented while pdo_diagnostics is
+  // enabled (default Basic), and accumulate for the entire lifetime of the owning EthercatBus
+  // instance - there is no reset anywhere in initialize()/startup()/activate()/shutdown(), and a
+  // slave dropping/reconnecting does not reset them either. They only start over when a new
+  // EthercatBus object is constructed.
+
+  // Cumulative number of EtherCAT frames sent by the master since this EthercatBus was
+  // constructed.
   uint64_t frames_sent = 0;
 
   // Cumulative number of frames for which no valid response was received
@@ -187,6 +205,9 @@ struct BusStatus
   uint64_t wkc_mismatches = 0;
 };
 
+// Cumulative mailbox event counters (CoE/FoE/SoE aborts, timeouts, emergencies), accumulated for
+// the entire lifetime of the owning EthercatBus instance (same never-reset semantics as
+// BusStatus's counters above).
 struct MailboxStatus
 {
   uint64_t mailbox_aborts = 0;
@@ -233,12 +254,17 @@ struct DiagnosticsSnapshot
   BusStatus bus;
   std::vector<ESCStatus> slaves;
 
+  // Live copy of the bus's cumulative mailbox event counters, taken at the moment diagnostics()
+  // was called - unlike `bus`/`slaves`, this is not itself part of the RT-cycle-updated snapshot
+  // cache, since mailbox events are never reported from the RT thread.
+  MailboxStatus mailbox;
+
   // Additional information added by the executor if the DiagnosticsSnapshot was obtained from the executor
   // Otherwise this field will be empty
   std::optional<ExecutionStatus> executor;
   // Time this snapshot was captured, using a monotonic clock — suitable
   // for measuring elapsed time between snapshots, not wall-clock display.
-  // @note this does not refere to all subfields!
+  // @note this does not refer to all subfields!
   HighPrecisionTimeStamp timestamp;
 };
 

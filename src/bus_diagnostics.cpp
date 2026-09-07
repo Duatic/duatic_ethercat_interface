@@ -23,6 +23,7 @@
  */
 #include "duatic_ethercat_interface/bus_diagnostics.hpp"
 
+#include <algorithm>
 #include <sstream>
 #include <iomanip>
 
@@ -44,6 +45,7 @@ void print_timing(std::ostream& os, const char* label, const ExecutorTimingDiagn
   os << "    avg duration:      " << t.average_update_duration << " us\n";
   os.flags(flags);
   os.precision(prec);
+  os << "    running:           " << (t.is_running ? "yes" : "no") << "\n";
 
   // RT-thread-only fields
   if (t.missed_rate_steps) {
@@ -68,6 +70,12 @@ std::string to_string(const DiagnosticsSnapshot& snap)
   os << "  frames sent:    " << snap.bus.frames_sent << "\n";
   os << "  frames lost:    " << snap.bus.frames_lost << "\n";
   os << "  wkc mismatches: " << snap.bus.wkc_mismatches << "\n";
+
+  // Mailbox (cumulative, for the lifetime of the bus)
+  os << "\n-- Mailbox --\n";
+  os << "  aborts:      " << snap.mailbox.mailbox_aborts << "\n";
+  os << "  timeouts:    " << snap.mailbox.mailbox_timeouts << "\n";
+  os << "  emergencies: " << snap.mailbox.mailbox_emergencies << "\n";
 
   // Per-slave
   os << "\n-- Slaves (" << snap.slaves.size() << ") --\n";
@@ -97,6 +105,18 @@ std::string to_string(const DiagnosticsSnapshot& snap)
        << " -> entry port " << static_cast<int>(s.topology.entry_port) << ")"
        << "  active_ports=[" << active_ports_list << "]"
        << "  propagation_delay=" << s.topology.propagation_delay_ns << " ns\n";
+
+    os << "        dc chain: next=" << s.topology.dc_next << "  previous=" << s.topology.dc_previous << "\n";
+    const bool any_dc_receive_time =
+        std::any_of(s.topology.dc_port_receive_time_ns.begin(), s.topology.dc_port_receive_time_ns.end(),
+                    [](int32_t t) { return t != 0; });
+    if (any_dc_receive_time) {
+      os << "        dc port receive times [ns]:";
+      for (std::size_t p = 0; p < s.topology.dc_port_receive_time_ns.size(); ++p) {
+        os << "  port " << p << "=" << s.topology.dc_port_receive_time_ns[p];
+      }
+      os << "\n";
+    }
   }
 
   // Executor (optional)

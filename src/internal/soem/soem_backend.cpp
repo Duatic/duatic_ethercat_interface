@@ -196,7 +196,8 @@ struct EthercatBus::BackendImpl
       logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                               << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                               << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                              << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+                              << static_cast<uint16_t>(sub_index) << "): "
+                              << (event ? event->description : "unknown reason") << std::endl;
       return SDOReadResult{
         .success = false, .actual_size_read = actual_size, .working_counter = wkc, .mailbox_diagnostics = event
       };
@@ -248,7 +249,8 @@ struct EthercatBus::BackendImpl
       logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                               << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                               << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                              << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+                              << static_cast<uint16_t>(sub_index) << "): "
+                              << (event ? event->description : "unknown reason") << std::endl;
 
       return SDOWriteResult{ .success = false, .working_counter = wkc, .mailbox_diagnostics = event };
     }
@@ -321,6 +323,10 @@ struct EthercatBus::BackendImpl
       topology.parent_port = context_.ecatSlavelist_[i].parentport;
       topology.entry_port = context_.ecatSlavelist_[i].entryport;
       topology.propagation_delay_ns = context_.ecatSlavelist_[i].pdelay;
+      topology.dc_next = static_cast<DeviceId>(context_.ecatSlavelist_[i].DCnext);
+      topology.dc_previous = static_cast<DeviceId>(context_.ecatSlavelist_[i].DCprevious);
+      topology.dc_port_receive_time_ns = { context_.ecatSlavelist_[i].DCrtA, context_.ecatSlavelist_[i].DCrtB,
+                                           context_.ecatSlavelist_[i].DCrtC, context_.ecatSlavelist_[i].DCrtD };
     }
 
     // Setup dc sync (NOTE we only support sync0 at the moment)
@@ -782,14 +788,26 @@ struct EthercatBus::BackendImpl
       throw BackendError("Bus diagnostics force update may not be used when the bus is either in 'Operational' "
                          "or 'Activated' state !",
                          Backend::SOEM);
-    } else if (force_update) {
+    }
+
+    DiagnosticsSnapshot snapshot;
+    if (force_update) {
       update_diagnostics_fast(0, 0);
       update_diagnostics_slow();
-      return latest_diagnostics_;
+      snapshot = latest_diagnostics_;
     } else {
       std::lock_guard<std::mutex> lock(diagnostics_mutex_);
-      return latest_diagnostics_;
+      snapshot = latest_diagnostics_;
     }
+
+    // mailbox_status_ is never touched by the RT thread (see report_mailbox_event()'s callers),
+    // so this stays entirely off the RT path - just a tiny, separately-guarded copy.
+    {
+      std::lock_guard<std::mutex> lock(mailbox_status_mutex_);
+      snapshot.mailbox = mailbox_status_;
+    }
+
+    return snapshot;
   }
 
 private:
@@ -892,6 +910,10 @@ private:
 
   bool internal_service_update()
   {
+    // Cheap (a handful of local syscalls, no bus traffic) - refresh every tick regardless of
+    // DiagnosticsOptions, same as the one-time capture in initialize() this now supersedes.
+    latest_diagnostics_.bus.link_up = nic::is_up(params_.interface);
+
     if (std::unique_lock<std::mutex> lock(mailbox_mutex_, std::try_to_lock); lock.owns_lock()) {
       drain_mailbox_events();
     }
