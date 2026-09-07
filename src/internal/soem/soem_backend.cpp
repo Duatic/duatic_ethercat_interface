@@ -100,7 +100,7 @@ struct EthercatBus::BackendImpl
     // unconditionally (it costs nothing and is unrelated to DiagnosticsOptions). parent_port /
     // entry_port / propagation_delay_ns are not valid yet - startup()'s DC configuration pass
     // fills those in once it has run.
-    for (int i = 1; i <= context_.ecatSlavecount_; i++) {
+    for (uint16_t i = 1; i <= static_cast<uint16_t>(context_.ecatSlavecount_); i++) {
       auto& topology = latest_diagnostics_.slaves[static_cast<std::size_t>(i - 1)].topology;
       topology.parent = static_cast<DeviceId>(context_.ecatSlavelist_[i].parent);
       const auto active_ports_mask = context_.ecatSlavelist_[i].activeports;
