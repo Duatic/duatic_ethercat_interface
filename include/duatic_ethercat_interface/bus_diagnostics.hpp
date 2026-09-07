@@ -120,11 +120,11 @@ struct ESCPortHealth
 // bring-up.
 struct DeviceTopology
 {
-  DeviceId parent = 0;         // parent slave id in the physical chain, 0 = master
-  uint8_t parent_port = 0;     // port on the parent this slave is connected to
-  uint8_t entry_port = 0;      // port on this slave the parent is connected to
+  DeviceId parent = 0;                 // parent slave id in the physical chain, 0 = master
+  uint8_t parent_port = 0;             // port on the parent this slave is connected to
+  uint8_t entry_port = 0;              // port on this slave the parent is connected to
   std::array<bool, 4> active_ports{};  // active_ports[N] true if port N has an active link
-  int32_t propagation_delay_ns = 0;  // one-time DC propagation delay measurement, nanoseconds
+  int32_t propagation_delay_ns = 0;    // one-time DC propagation delay measurement, nanoseconds
 };
 
 // Diagnostic status of a single slave's ESC. All fields except `online`
