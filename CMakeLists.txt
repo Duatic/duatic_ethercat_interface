@@ -18,6 +18,7 @@ endforeach()
 
 add_library(duatic_ethercat_interface
   src/internal/soem/soem_backend.cpp
+  src/internal/nic.cpp
   src/ethercat_device.cpp
   src/bus_diagnostics.cpp
 )

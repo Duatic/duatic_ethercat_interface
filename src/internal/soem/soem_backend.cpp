@@ -42,6 +42,7 @@
 #include "duatic_ethercat_interface/internal/soem/soem_context.hpp"
 #include "duatic_ethercat_interface/internal/soem/bus_state.hpp"
 #include "duatic_ethercat_interface/internal/soem/mailbox.hpp"
+#include "duatic_ethercat_interface/internal/nic.hpp"
 
 // Implementation of the EthercatBus for the SOEM library
 namespace duatic::ethercat_interface
@@ -97,13 +98,20 @@ struct EthercatBus::BackendImpl
 
     // Print some general information about some parameters
     if (is_diagnostics_enabled(params_.diagnostics.pdo_diagnostics)) {
-      logging::warning(logger_) << "Bus Diagnostics is enabled - this has a low impact on the timing";
+      logging::info(logger_) << "Bus Diagnostics is enabled - this has a low impact on the timing";
     }
     if (is_diagnostics_enabled(params_.diagnostics.esc_diagnostics)) {
-      logging::warning(logger_) << "ESC Diagnostics is enabled - this has a high impact on the timing";
+      logging::info(logger_) << "ESC Diagnostics is enabled - this has a high impact on the timing";
     }
     if (is_diagnostics_enabled(params_.diagnostics.esc_port_diagnostics)) {
-      logging::warning(logger_) << "ESC Port Diagnostics is enabled - this has a  veryhigh impact on the timing";
+      logging::info(logger_) << "ESC Port Diagnostics is enabled - this has a  veryhigh impact on the timing";
+    }
+
+    latest_diagnostics_.bus.link_up = nic::is_up(params_.interface);
+    if (!latest_diagnostics_.bus.link_up) {
+      logging::warning(logger_)
+          << "NIC: "
+          << params_.interface << " is not reported as online - make sure the connection properly established";
     }
 
     update_bus_state(BusState::Initialized);
@@ -1265,7 +1273,8 @@ SDOReadValue<std::string> EthercatBus::sdo_read<std::string>(const DeviceId devi
   }
 
   // Create an std::string out of it
-  const std::string_view raw{ data.data(), std::min<std::size_t>(result.actual_size_read, data.size()) };
+  const std::string_view raw{ data.data(),
+                              std::min<std::size_t>(static_cast<std::size_t>(result.actual_size_read), data.size()) };
   const auto text = raw.substr(0, raw.find('\0'));
   return SDOReadValue<std::string>(result, std::string(text));
 }
