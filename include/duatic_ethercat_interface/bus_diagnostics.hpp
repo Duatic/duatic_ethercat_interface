@@ -125,13 +125,13 @@ struct ESCPortHealth
 // initialize() ran).
 struct DeviceTopology
 {
-  DeviceId parent = 0;                 // parent slave id in the physical chain, 0 = master
-  uint8_t parent_port = 0;             // port on the parent this slave is connected to
-  uint8_t entry_port = 0;              // port on this slave the parent is connected to
-  std::array<bool, 4> active_ports{};  // active_ports[N] true if port N has an active link
-  int32_t propagation_delay_ns = 0;    // one-time DC propagation delay measurement, nanoseconds
-  DeviceId dc_next = 0;                // next slave in the DC sync chain, 0 = none
-  DeviceId dc_previous = 0;            // previous slave in the DC sync chain, 0 = none/master
+  DeviceId parent = 0;                               // parent slave id in the physical chain, 0 = master
+  uint8_t parent_port = 0;                           // port on the parent this slave is connected to
+  uint8_t entry_port = 0;                            // port on this slave the parent is connected to
+  std::array<bool, 4> active_ports{};                // active_ports[N] true if port N has an active link
+  int32_t propagation_delay_ns = 0;                  // one-time DC propagation delay measurement, nanoseconds
+  DeviceId dc_next = 0;                              // next slave in the DC sync chain, 0 = none
+  DeviceId dc_previous = 0;                          // previous slave in the DC sync chain, 0 = none/master
   std::array<int32_t, 4> dc_port_receive_time_ns{};  // per-port DC receive timestamps (DCrtA-D)
 };
 

@@ -196,8 +196,8 @@ struct EthercatBus::BackendImpl
       logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                               << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                               << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                              << static_cast<uint16_t>(sub_index) << "): "
-                              << (event ? event->description : "unknown reason") << std::endl;
+                              << static_cast<uint16_t>(sub_index)
+                              << "): " << (event ? event->description : "unknown reason") << std::endl;
       return SDOReadResult{
         .success = false, .actual_size_read = actual_size, .working_counter = wkc, .mailbox_diagnostics = event
       };
@@ -249,8 +249,8 @@ struct EthercatBus::BackendImpl
       logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                               << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                               << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                              << static_cast<uint16_t>(sub_index) << "): "
-                              << (event ? event->description : "unknown reason") << std::endl;
+                              << static_cast<uint16_t>(sub_index)
+                              << "): " << (event ? event->description : "unknown reason") << std::endl;
 
       return SDOWriteResult{ .success = false, .working_counter = wkc, .mailbox_diagnostics = event };
     }
