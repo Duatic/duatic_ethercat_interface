@@ -196,7 +196,8 @@ struct EthercatBus::BackendImpl
       logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                               << ") for reading SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                               << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                              << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+                              << static_cast<uint16_t>(sub_index)
+                              << "): " << (event ? event->description : "unknown reason") << std::endl;
       return SDOReadResult{
         .success = false, .actual_size_read = actual_size, .working_counter = wkc, .mailbox_diagnostics = event
       };
@@ -248,7 +249,8 @@ struct EthercatBus::BackendImpl
       logging::error(logger_) << "Device id " << device_id << ": Working counter too low (" << wkc
                               << ") for writing SDO (ID: 0x" << std::setfill('0') << std::setw(4) << std::hex << index
                               << ", SID 0x" << std::setfill('0') << std::setw(2) << std::hex
-                              << static_cast<uint16_t>(sub_index) << ")." << std::endl;
+                              << static_cast<uint16_t>(sub_index)
+                              << "): " << (event ? event->description : "unknown reason") << std::endl;
 
       return SDOWriteResult{ .success = false, .working_counter = wkc, .mailbox_diagnostics = event };
     }
@@ -321,6 +323,10 @@ struct EthercatBus::BackendImpl
       topology.parent_port = context_.ecatSlavelist_[i].parentport;
       topology.entry_port = context_.ecatSlavelist_[i].entryport;
       topology.propagation_delay_ns = context_.ecatSlavelist_[i].pdelay;
+      topology.dc_next = static_cast<DeviceId>(context_.ecatSlavelist_[i].DCnext);
+      topology.dc_previous = static_cast<DeviceId>(context_.ecatSlavelist_[i].DCprevious);
+      topology.dc_port_receive_time_ns = { context_.ecatSlavelist_[i].DCrtA, context_.ecatSlavelist_[i].DCrtB,
+                                           context_.ecatSlavelist_[i].DCrtC, context_.ecatSlavelist_[i].DCrtD };
     }
 
     // Setup dc sync (NOTE we only support sync0 at the moment)
@@ -782,14 +788,26 @@ struct EthercatBus::BackendImpl
       throw BackendError("Bus diagnostics force update may not be used when the bus is either in 'Operational' "
                          "or 'Activated' state !",
                          Backend::SOEM);
-    } else if (force_update) {
+    }
+
+    DiagnosticsSnapshot snapshot;
+    if (force_update) {
       update_diagnostics_fast(0, 0);
       update_diagnostics_slow();
-      return latest_diagnostics_;
+      snapshot = latest_diagnostics_;
     } else {
       std::lock_guard<std::mutex> lock(diagnostics_mutex_);
-      return latest_diagnostics_;
+      snapshot = latest_diagnostics_;
     }
+
+    // mailbox_status_ is never touched by the RT thread (see report_mailbox_event()'s callers),
+    // so this stays entirely off the RT path - just a tiny, separately-guarded copy.
+    {
+      std::lock_guard<std::mutex> lock(mailbox_status_mutex_);
+      snapshot.mailbox = mailbox_status_;
+    }
+
+    return snapshot;
   }
 
 private:
@@ -892,6 +910,10 @@ private:
 
   bool internal_service_update()
   {
+    // Cheap (a handful of local syscalls, no bus traffic) - refresh every tick regardless of
+    // DiagnosticsOptions, same as the one-time capture in initialize() this now supersedes.
+    latest_diagnostics_.bus.link_up = nic::is_up(params_.interface);
+
     if (std::unique_lock<std::mutex> lock(mailbox_mutex_, std::try_to_lock); lock.owns_lock()) {
       drain_mailbox_events();
     }
@@ -985,13 +1007,24 @@ private:
     if (current_selected_diagnostics_slave_ >= static_cast<std::size_t>(context_.ecatSlavecount_)) {
       current_selected_diagnostics_slave_ = 0;
     }
-    update_slave_port_diagnostics(context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr,
-                                  latest_diagnostics_.slaves[current_selected_diagnostics_slave_]);
-    latest_diagnostics_.slaves[current_selected_diagnostics_slave_].ports_update_timestamp = HighPrecisionClock::now();
+    const auto config_adr = context_.ecatSlavelist_[current_selected_diagnostics_slave_ + 1].configadr;
+
+    // Slow (bus round-trip via ecx_FPRD): computed into locals, no lock held.
+    const auto ports = read_slave_port_diagnostics(config_adr);
+
+    // Fast (struct copy only): diagnostics_mutex_ is held just long enough to publish the
+    // result, consistent with its role for the rest of latest_diagnostics_.slaves (see
+    // update_diagnostics_fast()) - never held across the register reads above.
+    {
+      std::lock_guard<std::mutex> lock(diagnostics_mutex_);
+      latest_diagnostics_.slaves[current_selected_diagnostics_slave_].ports = ports;
+      latest_diagnostics_.slaves[current_selected_diagnostics_slave_].ports_update_timestamp =
+          HighPrecisionClock::now();
+    }
     current_selected_diagnostics_slave_ += 1;
   }
 
-  void update_slave_port_diagnostics(const uint16 config_adr, ESCStatus& status)
+  std::array<ESCPortHealth, 4> read_slave_port_diagnostics(const uint16 config_adr)
   {
     constexpr uint16_t DL_STATUS = 0x0110;          // 2 bytes: link/loop/comm status
     constexpr uint16_t RX_ERROR_COUNTER = 0x0300;   // 8 bytes: 2 per port (invalid, rx err) x4
@@ -1005,14 +1038,16 @@ private:
     uint8_t lost_link[4] = {};
     ecx_FPRD(&context_.ecat_port, config_adr, LOST_LINK_COUNTER, sizeof(lost_link), lost_link, EC_TIMEOUTRET);
 
+    std::array<ESCPortHealth, 4> ports{};
     for (std::size_t p = 0; p < 4; ++p) {
       // Physical link bits per port sit at bits 4-7 of DL Status.
       // VERIFY bit layout against your ESC datasheet.
-      status.ports[p].link_up = (dl_status & (1u << (4 + p))) != 0;
-      status.ports[p].invalid_frames = rx_err[p * 2];
-      status.ports[p].rx_errors = rx_err[p * 2 + 1];
-      status.ports[p].lost_links = lost_link[p];
+      ports[p].link_up = (dl_status & (1u << (4 + p))) != 0;
+      ports[p].invalid_frames = rx_err[p * 2];
+      ports[p].rx_errors = rx_err[p * 2 + 1];
+      ports[p].lost_links = lost_link[p];
     }
+    return ports;
   }
 
   /// Empties SOEM's error list. The first event attributable to `acc` is returned,
