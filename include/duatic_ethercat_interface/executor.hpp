@@ -221,6 +221,14 @@ public:
     return service_error_ptr_;
   }
 
+  /**
+   * @brief is_spinning - check if the executor is currently spinning the rt thread at least
+   */
+  bool is_spinning() const
+  {
+    return spinning_;
+  }
+
 private:
   std::exception_ptr rt_error_ptr_;
   std::atomic_bool rt_error_ocurred_{ false };
