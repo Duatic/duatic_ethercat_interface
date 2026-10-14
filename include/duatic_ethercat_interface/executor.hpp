@@ -26,6 +26,7 @@
 #include <thread>
 #include <vector>
 #include <memory>
+#include <condition_variable>
 
 #include "duatic_ethercat_interface/precision_update_rate.hpp"
 #include "duatic_ethercat_interface/exceptions.hpp"
