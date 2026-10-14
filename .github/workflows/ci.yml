@@ -5,7 +5,7 @@ on:
       ros_distro:
         description: 'Distro to build'
         type: choice
-        options: [all, jazzy, kilted, lyrical, rolling]
+        options: [all, humble, jazzy, kilted, lyrical, rolling]
         default: all
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -23,5 +23,6 @@ jobs:
     uses: Duatic/ci-workflows/.github/workflows/ci_orchestrator.yml@v1
     with:
       ros_distro: ${{ inputs.ros_distro }}
+      extra_distros: humble
       badge_branch: true
     secrets: inherit
