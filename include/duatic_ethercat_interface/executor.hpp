@@ -26,6 +26,7 @@
 #include <thread>
 #include <vector>
 #include <memory>
+#include <condition_variable>
 
 #include "duatic_ethercat_interface/precision_update_rate.hpp"
 #include "duatic_ethercat_interface/exceptions.hpp"
@@ -102,7 +103,8 @@ public:
           rt_thread_diagnostics_.accumulated_delay = update_rate_.accumulated_delay_ns();
 
           if (this->update_rate_.step(dc_correction_offset.value_or(std::chrono::nanoseconds{ 0 }))) {
-            logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns();
+            logging::warning(logger_) << "Could not keep update rate: " << this->update_rate_.last_delay_ns().count()
+                                      << " ns";
           }
         }
         rt_thread_diagnostics_.is_running = false;
