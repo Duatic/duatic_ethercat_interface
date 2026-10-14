@@ -2,6 +2,7 @@
 
 A multibackend C++20 ethercat master library.
 
+[![Humble](https://github.com/Duatic/duatic_ethercat_interface/raw/badges/humble.svg)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/ci.yml)
 [![Jazzy](https://github.com/Duatic/duatic_ethercat_interface/raw/badges/jazzy.svg)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/ci.yml)
 [![Kilted](https://github.com/Duatic/duatic_ethercat_interface/raw/badges/kilted.svg)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/ci.yml)
 [![Lyrical](https://github.com/Duatic/duatic_ethercat_interface/raw/badges/lyrical.svg)](https://github.com/Duatic/duatic_ethercat_interface/actions/workflows/ci.yml)
