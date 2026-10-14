@@ -25,7 +25,7 @@
 #pragma once
 
 #include <array>        // NOLINT(build/include_order)
-#include <format>       // NOLINT(build/include_order)
+#include <charconv>     // NOLINT(build/include_order)
 #include <span>         // NOLINT(build/include_order)
 #include <string>       // NOLINT(build/include_order)
 #include <type_traits>  // NOLINT(build/include_order)
@@ -34,6 +34,15 @@
 
 namespace duatic::ethercat_interface::internal
 {
+
+// Shortest round-trip representation, same output as std::format("{}") (which GCC 11 / Humble lacks)
+template <typename T>
+std::string number_to_string(const T value)
+{
+  std::array<char, 64> buf{};
+  const auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
+  return ec == std::errc{} ? std::string(buf.data(), ptr) : "error";
+}
 
 // Only assumption about ValueDiagnosticsWrapper: contextual bool + .value
 template <typename T>
@@ -48,13 +57,13 @@ std::string sdo_read_as(EthercatBus& bus, const DeviceId id, const SDOIndex inde
   } else if constexpr (std::is_same_v<T, std::string>) {
     return read.value();
   } else {
-    return std::format("{}", read.value());
+    return number_to_string(read.value());
   }
 }
 
 // 24/40/48/56 bit: no native C++ type, read the bytes and assemble them.
-std::string sdo_read_odd_int(EthercatBus& bus, const DeviceId id, const SDOIndex index, const SDOSubIndex sub,
-                             const std::size_t bytes, const bool is_signed)
+inline std::string sdo_read_odd_int(EthercatBus& bus, const DeviceId id, const SDOIndex index, const SDOSubIndex sub,
+                                    const std::size_t bytes, const bool is_signed)
 {
   std::array<uint8_t, 8> buf{};
   if (!bus.read_sdo_untyped(std::span<uint8_t>(buf).first(bytes), id, index, sub)) {
@@ -68,23 +77,23 @@ std::string sdo_read_odd_int(EthercatBus& bus, const DeviceId id, const SDOIndex
 
   if (is_signed) {
     const uint64_t sign_bit = uint64_t{ 1 } << (bytes * 8U - 1U);
-    return std::format("{}", static_cast<int64_t>((v ^ sign_bit) - sign_bit));
+    return number_to_string(static_cast<int64_t>((v ^ sign_bit) - sign_bit));
   }
-  return std::format("{}", v);
+  return number_to_string(v);
 }
 
-std::string sdo_read_bits(EthercatBus& bus, const DeviceId id, const SDOIndex index, const SDOSubIndex sub,
-                          const unsigned bits)
+inline std::string sdo_read_bits(EthercatBus& bus, const DeviceId id, const SDOIndex index, const SDOSubIndex sub,
+                                 const unsigned bits)
 {
   std::array<uint8_t, 1> buf{};
   if (!bus.read_sdo_untyped(buf, id, index, sub)) {
     return "error";
   }
-  return std::format("{}", buf[0] & ((1U << bits) - 1U));
+  return number_to_string(buf[0] & ((1U << bits) - 1U));
 }
 
-std::string sdo_print_helper(EthercatBus& bus, const DeviceId device_id, const SDOIndex index,
-                             const SDOSubIndex sub_index, const DataType sdo_data_type)
+inline std::string sdo_print_helper(EthercatBus& bus, const DeviceId device_id, const SDOIndex index,
+                                    const SDOSubIndex sub_index, const DataType sdo_data_type)
 {
   try {
     if (sdo_data_type >= DataType::BIT1 && sdo_data_type <= DataType::BIT8) {
